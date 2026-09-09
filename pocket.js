@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.2.0-beta';
+  const VERSION = '1.2.1-beta';
 
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => {

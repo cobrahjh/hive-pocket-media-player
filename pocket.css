@@ -57,11 +57,12 @@ html, body {
 }
 /* Version chip. Always on screen: this is a beta handed to other people, and a bug report
    that does not say which build it came from costs more than the pixels. */
+.sub { display: flex; align-items: center; gap: 6px; }
 .ver {
   font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
   font-size: 0.58rem; font-weight: 600; letter-spacing: 0.08em;
   color: var(--hive); border: 1px solid var(--hive); border-radius: 3px;
-  padding: 1px 4px; margin-left: 6px; vertical-align: 2px; white-space: nowrap;
+  padding: 1px 4px; white-space: nowrap; flex: 0 0 auto;
 }
 
 .sub {
@@ -69,6 +70,8 @@ html, body {
   font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+
+#libNote { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .icon-btn {
   flex: 0 0 auto;
