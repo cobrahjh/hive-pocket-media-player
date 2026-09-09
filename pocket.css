@@ -108,12 +108,49 @@ html, body {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   overflow: hidden;
+  /* It is a <button> now. Undo the parts of that a browser supplies and this design does not
+     want, but keep the parts that make it a control: focus ring, keyboard, announcement. */
+  display: block;
+  width: 100%;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  /* No 300ms wait for a second tap that would only zoom the page. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #fxCanvas { pointer-events: none; transition: opacity 0.2s; }
-.stage-hint {
-  position: absolute; inset: auto 1rem 1rem; margin: 0;
+.stage-hint, .stage-tip {
+  position: absolute; inset: auto 1rem 1rem; margin: 0; display: block;
   text-align: center; font-size: 0.78rem; color: var(--muted); line-height: 1.5;
+}
+
+/* Full screen, two ways. The native one is what a phone should get: it takes the browser's own
+   chrome away too. It is also the one that can be missing or refused, so `.cover` does the job
+   with layout alone and is what actually guarantees the tap did something. Both are applied;
+   whichever lands, the stage covers the screen and one more tap comes back. */
+.stage.cover {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  width: auto;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+}
+.stage:fullscreen { border: 0; border-radius: 0; background: #0C0B0A; }
+.stage-tip {
+  background: rgba(0, 0, 0, 0.45);
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  inset: auto auto 1.2rem 50%;
+  transform: translateX(-50%);
+  transition: opacity 0.4s;
 }
 
 /* ── now playing ── */
@@ -207,7 +244,7 @@ html, body {
 .set { display: flex; flex-direction: column; gap: 0.4rem; }
 .set-lab { font-size: 0.8rem; font-weight: 600; }
 .set-note { margin: 0; font-size: 0.72rem; color: var(--muted); line-height: 1.55; }
-#ambientSel {
+#ambientSel, #visualsSel {
   min-height: 44px; padding: 0 0.6rem;
   background: var(--ground); color: var(--text);
   border: 1px solid var(--line); border-radius: var(--radius);

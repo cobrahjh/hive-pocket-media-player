@@ -51,13 +51,24 @@ Choose one and three limits apply that no setting can raise: the whole-frame fla
 0.12 opacity, two strikes can never land inside 0.8 seconds of each other, and at most six bolts
 are alive at once.
 
+## The visuals
+
+**Tap them for full screen, tap again to come back.** Where the browser offers real full screen
+it is used, so the browser's own bars go away too; where it refuses, the stage covers the screen
+anyway. The tap always does something.
+
+**Settings decides what fills it**: the effects over the equalizer, the effects alone, or the
+equalizer alone. The effects button on the transport is the same setting, so the two can never
+disagree about what you are looking at.
+
 ## Tests
 
     node tests/ambient-smoke.js     the picker, and whether a flashing mode actually strikes
     node tests/resume-smoke.js      a play blocked by the phone, then resumed by a tap
+    node tests/visuals-smoke.js     what is on the stage, and the tap that fills the screen
 
-Both run under plain Node against stub DOM objects, and both mutate the code under test to prove
-their own assertions can fail.
+All three run under plain Node against `tests/dom-stub.js`, and each one mutates the code under
+test and requires its own assertion to fail. The stub explains why these are not browser tests.
 
 ## Built from
 

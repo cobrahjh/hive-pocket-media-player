@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.3.0-beta';
+  const VERSION = '1.4.0-beta';
 
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => {
@@ -85,12 +85,24 @@
   let queue = [];          // { name, url, file?, link? }
   let current = -1;
   let audio = null;
-  let fxOn = true;
+  // What is on the stage. ONE stored value, not two booleans and not a second copy behind the
+  // transport's effects button — that button writes here too, so the menu and the button can
+  // never disagree about what you are looking at.
+  const VISUALS_KEY = 'hive-pocket.visuals';
+  const VISUALS = ['both', 'fx', 'eq'];
+  let visuals = 'both';
+  const fxShown = () => visuals !== 'eq';
+  const eqShown = () => visuals !== 'fx';
   let shuffleOn = false;
   let repeatMode = 'off';        // 'off' | 'all' | 'one'
   // A shuffled ORDER, not a random pick each time: every track once before any repeats, which is
   // what people mean by shuffle. Rebuilt when the queue changes or shuffle is switched on.
   let order = null, orderPos = -1;
+
+  function readVisuals() {
+    try { const v = localStorage.getItem(VISUALS_KEY); return VISUALS.includes(v) ? v : 'both'; }
+    catch (e) { return 'both'; }
+  }
 
   const MODES_KEY = 'hive-pocket.modes';
   const AMBIENT_KEY = 'hive-pocket.ambient';
@@ -193,14 +205,69 @@
     fx.setConfig({ ambient: readAmbient() });
     eq.start();
     fx.start();
+    applyVisuals(visuals);   // the canvases exist now, so the stored choice can take effect
+  }
+
+  // `hidden` and not opacity: an invisible canvas is still a canvas being painted every frame,
+  // and this runs on a phone battery. The pump below stops feeding whichever one is off, and a
+  // renderer re-measures on the way back because it was sized to a box of zero while away.
+  function applyVisuals(v) {
+    visuals = VISUALS.includes(v) ? v : 'both';
+    try { localStorage.setItem(VISUALS_KEY, visuals); } catch (e) { /* private mode */ }
+    $('eqCanvas').hidden = !eqShown();
+    $('fxCanvas').hidden = !fxShown();
+    if (eq && eqShown()) eq.resize();
+    if (fx && fxShown()) fx.resize();
+    $('visualsSel').value = visuals;
+    const on = fxShown();
+    $('fxBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
+    $('fxBtn').setAttribute('aria-label', on ? 'Effects on' : 'Effects off');
+  }
+
+  // ── Full screen ──────────────────────────────────────────────────────────────────────
+  // Native full screen is what a phone should get: it takes the browser's own bars away too.
+  // It can also be absent, or refused when the tap does not look like a gesture to the browser,
+  // and it gives no useful error when it is. So the class goes on FIRST and unconditionally —
+  // that alone covers the screen — and the native request is a best-effort improvement on top.
+  // The tap always does something visible, which is the whole contract of a tap.
+  let covered = false;
+  let tipTimer = 0;
+
+  function nativeOn() {
+    const el = $('stage');
+    const req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (!req) return;
+    try { Promise.resolve(req.call(el)).catch(() => {}); } catch (e) { /* refused */ }
+  }
+  function nativeOff() {
+    const off = document.exitFullscreen || document.webkitExitFullscreen;
+    if (!off || !(document.fullscreenElement || document.webkitFullscreenElement)) return;
+    try { Promise.resolve(off.call(document)).catch(() => {}); } catch (e) { /* already out */ }
+  }
+
+  function setCover(on) {
+    covered = on === true;
+    $('stage').classList.toggle('cover', covered);
+    $('stage').setAttribute('aria-pressed', covered ? 'true' : 'false');
+    $('stage').setAttribute('aria-label', covered ? 'Leave full screen' : 'Show the visuals full screen');
+    // The way back has to be discoverable. It is the same tap, which is not obvious, so say so
+    // once and then get out of the way of the thing the person went full screen to look at.
+    clearTimeout(tipTimer);
+    $('coverTip').hidden = !covered;
+    $('coverTip').style.opacity = '';
+    if (covered) tipTimer = setTimeout(() => { $('coverTip').style.opacity = '0'; }, 2600);
+    if (covered) nativeOn(); else nativeOff();
+    // The stage just changed size by a lot. A renderer that missed it draws into the old box.
+    if (eq && eqShown()) eq.resize();
+    if (fx && fxShown()) fx.resize();
   }
 
   function pump() {
     if (!pumping) return;
     const b = readBands();
     if (b) {
-      if (eq) eq.push(b);
-      if (fx && fxOn) fx.pushBands(b);
+      if (eq && eqShown()) eq.push(b);
+      if (fx && fxShown()) fx.pushBands(b);
     }
     requestAnimationFrame(pump);
   }
@@ -474,6 +541,7 @@
 
   function paintSheet() {
     $('ambientSel').value = readAmbient();
+    $('visualsSel').value = visuals;
     $('motionNote').hidden = !reducedMotion();
     const n = readLinks().length;
     $('linkCount').textContent = n ? (n + ' saved. They come back every time you open the app.') : 'None saved.';
@@ -547,12 +615,22 @@
     writeModes(); paintModes();
   });
 
-  $('fxBtn').addEventListener('click', () => {
-    fxOn = !fxOn;
-    $('fxBtn').setAttribute('aria-pressed', fxOn ? 'true' : 'false');
-    $('fxBtn').setAttribute('aria-label', fxOn ? 'Effects on' : 'Effects off');
-    $('fxCanvas').style.opacity = fxOn ? '' : '0';
-  });
+  // Effects off means the equalizer alone; effects on means both. Turning them on from
+  // "equalizer only" cannot land on "effects only", because that would take away the thing
+  // that was on screen a moment ago.
+  $('stage').addEventListener('click', () => setCover(!covered));
+  // Android's back gesture and Escape both leave native full screen without telling this code.
+  // Without this the class would stay on and the stage would sit over the whole page with no
+  // browser chrome to explain it.
+  for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+    document.addEventListener(ev, () => {
+      const native = !!(document.fullscreenElement || document.webkitFullscreenElement);
+      if (!native && covered) setCover(false);
+    });
+  }
+
+  $('fxBtn').addEventListener('click', () => applyVisuals(fxShown() ? 'eq' : 'both'));
+  $('visualsSel').addEventListener('change', () => applyVisuals($('visualsSel').value));
 
   if ('mediaSession' in navigator) {
     const set = (a, fn) => { try { navigator.mediaSession.setActionHandler(a, fn); } catch (e) {} };
@@ -574,6 +652,7 @@
 
   // Saved links come back on their own; picked files cannot, and the note says which is which.
   readModes();
+  applyVisuals(readVisuals());
   queue = readLinks().map((l) => ({ name: l.name, url: l.url, link: true }));
   if (shuffleOn) buildOrder();
   renderQueue();
@@ -591,6 +670,8 @@
     get current() { return current; },
     get bands() { return readBands(); },
     get graphReady() { return !!(ctx && analyser && srcNode); },
+    get visuals() { return visuals; },
+    get covered() { return covered; },
     // Read-only counts from the effects renderer. Storm and lightning draw bolts as an event
     // subsystem separate from the weather particles, so 'is lightning actually striking' cannot
     // be answered from the config — only from here.

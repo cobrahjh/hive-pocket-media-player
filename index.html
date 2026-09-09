@@ -88,12 +88,17 @@
   </div>
   <p class="linknote" id="linkNote" hidden></p>
 
-  <!-- The stage. Effects draw over the equalizer, both from the same analyser. -->
-  <section class="stage" id="stage" aria-label="Visuals">
+  <!-- The stage. Effects draw over the equalizer, both from the same analyser.
+       A button, not a div with a click handler: it does something, so it has to be reachable
+       from a keyboard and announce itself. -->
+  <button class="stage" id="stage" type="button" aria-label="Show the visuals full screen"
+          aria-pressed="false">
     <canvas id="eqCanvas"></canvas>
     <canvas id="fxCanvas"></canvas>
-    <p class="stage-hint" id="stageHint">Pick some music and press play — the visuals follow the sound.</p>
-  </section>
+    <span class="stage-hint" id="stageHint">Pick some music and press play — the visuals follow
+      the sound. Tap them for full screen.</span>
+    <span class="stage-tip" id="coverTip" hidden>Tap again to come back</span>
+  </button>
 
   <section class="now">
     <div class="now-title" id="nowTitle">Nothing loaded</div>
@@ -143,6 +148,17 @@
   <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
     <div class="sheet-grip" aria-hidden="true"></div>
     <h2 id="sheetTitle">Settings</h2>
+
+    <div class="set">
+      <label class="set-lab" for="visualsSel">What fills the screen</label>
+      <select id="visualsSel">
+        <option value="both">Effects over the equalizer</option>
+        <option value="fx">Effects only</option>
+        <option value="eq">Equalizer only</option>
+      </select>
+      <p class="set-note">The effects button on the transport switches the effects half of this
+        on and off, and lands back here — the two are the same setting.</p>
+    </div>
 
     <div class="set">
       <label class="set-lab" for="ambientSel">Background effect</label>
