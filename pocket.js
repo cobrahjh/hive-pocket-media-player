@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.0.2-beta';
+  const VERSION = '1.1.0-beta';
 
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => {
@@ -86,6 +86,32 @@
   let current = -1;
   let audio = null;
   let fxOn = true;
+  let shuffleOn = false;
+  let repeatMode = 'off';        // 'off' | 'all' | 'one'
+  // A shuffled ORDER, not a random pick each time: every track once before any repeats, which is
+  // what people mean by shuffle. Rebuilt when the queue changes or shuffle is switched on.
+  let order = null, orderPos = -1;
+
+  const MODES_KEY = 'hive-pocket.modes';
+  function readModes() {
+    try {
+      const m = JSON.parse(localStorage.getItem(MODES_KEY) || '{}');
+      shuffleOn = m.shuffle === true;
+      repeatMode = (m.repeat === 'all' || m.repeat === 'one') ? m.repeat : 'off';
+    } catch (e) { /* private mode */ }
+  }
+  function writeModes() {
+    try { localStorage.setItem(MODES_KEY, JSON.stringify({ shuffle: shuffleOn, repeat: repeatMode })); }
+    catch (e) { /* private mode */ }
+  }
+  function buildOrder() {
+    order = queue.map((_, i) => i);
+    for (let i = order.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [order[i], order[j]] = [order[j], order[i]];
+    }
+    orderPos = order.indexOf(current);
+  }
 
   // ── Audio graph, built once on the first real play ───────────────────────────────────
   // Once, because createMediaElementSource can only be called once per element and throws on a
@@ -180,10 +206,42 @@
       const nm = document.createElement('span');
       nm.className = 'nm';
       nm.textContent = t.name;
-      li.append(num, nm);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'rowdel';
+      del.setAttribute('aria-label', 'Remove ' + t.name);
+      del.textContent = '\u00d7';
+      // stopPropagation, or removing a row also starts playing whatever slid into its place.
+      del.addEventListener('click', (ev) => { ev.stopPropagation(); removeAt(i); });
+      li.append(num, nm, del);
       li.addEventListener('click', () => play(i));
       ul.appendChild(li);
     });
+  }
+
+  function removeAt(i) {
+    const t = queue[i];
+    if (!t) return;
+    // A picked file's blob URL is memory held for the life of the page. Let it go.
+    if (!t.link) { try { URL.revokeObjectURL(t.url); } catch (e) {} }
+    // A saved link removed from the queue is removed from storage too — the queue IS the
+    // library for links, and leaving it saved would resurrect it on the next start.
+    if (t.link) writeLinks(readLinks().filter((l) => l.url !== t.url));
+
+    const wasCurrent = i === current;
+    queue.splice(i, 1);
+    if (i < current) current--;
+    else if (wasCurrent) {
+      // Do not silently jump to another song. Stop, and leave the next press to the person.
+      teardown();
+      current = -1;
+      $('nowTitle').textContent = queue.length ? 'Nothing loaded' : 'Nothing loaded';
+      $('nowSub').textContent = 'Removed. Pick a track to start again.';
+      paintPlay();
+    }
+    if (shuffleOn) buildOrder();
+    renderQueue();
+    paintLib();
   }
 
   // ── Playback ─────────────────────────────────────────────────────────────────────────
@@ -205,7 +263,7 @@
     audio.addEventListener('durationchange', paintTime);
     audio.addEventListener('play', () => { paintPlay(); startPump(); });
     audio.addEventListener('pause', () => { paintPlay(); });
-    audio.addEventListener('ended', () => next());
+    audio.addEventListener('ended', () => next(true));
     audio.addEventListener('error', () => {
       const t = queue[current];
       // A link that refused the CORS request: drop the request and take the audio without
@@ -259,7 +317,35 @@
     if (audio.paused) audio.play().catch(() => {});
     else audio.pause();
   }
-  function next() { if (queue.length) play(current + 1 >= queue.length ? 0 : current + 1); }
+  // fromEnd: a track that ran out, as opposed to the button. Only the former stops at the end
+  // of the queue — pressing Next at the last track wrapping is what people expect.
+  function next(fromEnd) {
+    if (!queue.length) return;
+    if (fromEnd && repeatMode === 'one') { play(current); return; }
+    if (shuffleOn) {
+      if (!order || order.length !== queue.length) buildOrder();
+      orderPos++;
+      if (orderPos >= order.length) {
+        if (fromEnd && repeatMode === 'off') { stopHere(); return; }
+        buildOrder(); orderPos = 0;
+      }
+      play(order[orderPos]);
+      return;
+    }
+    const n = current + 1;
+    if (n >= queue.length) {
+      if (fromEnd && repeatMode === 'off') { stopHere(); return; }
+      play(0); return;
+    }
+    play(n);
+  }
+  // The queue ran out and nothing says to carry on. Stop where it is rather than looping
+  // silently back to the top, which is how a player ends up playing all night.
+  function stopHere() {
+    if (audio) audio.pause();
+    $('nowSub').textContent = 'End of the queue.';
+    paintPlay();
+  }
   function prev() {
     if (!queue.length) return;
     if (audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
@@ -314,6 +400,7 @@
     current = -1;
     // Saved links are kept: picking files replaces the FILES, not the library.
     queue = queue.concat(readLinks().map((l) => ({ name: l.name, url: l.url, link: true })));
+    if (shuffleOn) buildOrder();
     renderQueue();
     paintLib();
   }
@@ -362,9 +449,29 @@
   $('linkInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addLink($('linkInput').value); } });
   $('filePick').addEventListener('change', (e) => adopt(e.target.files));
   $('playBtn').addEventListener('click', toggle);
-  $('nextBtn').addEventListener('click', next);
+  $('nextBtn').addEventListener('click', () => next(false));
   $('prevBtn').addEventListener('click', prev);
   $('seek').addEventListener('input', () => { if (audio) audio.currentTime = Number($('seek').value); });
+  function paintModes() {
+    const s = $('shuffleBtn');
+    s.setAttribute('aria-pressed', shuffleOn ? 'true' : 'false');
+    s.setAttribute('aria-label', shuffleOn ? 'Shuffle on' : 'Shuffle off');
+    const r = $('repeatBtn');
+    r.setAttribute('aria-pressed', repeatMode !== 'off' ? 'true' : 'false');
+    r.setAttribute('aria-label',
+      repeatMode === 'one' ? 'Repeat one track' : repeatMode === 'all' ? 'Repeat the queue' : 'Repeat off');
+    $('repeatOne').hidden = repeatMode !== 'one';
+  }
+  $('shuffleBtn').addEventListener('click', () => {
+    shuffleOn = !shuffleOn;
+    if (shuffleOn) buildOrder(); else { order = null; orderPos = -1; }
+    writeModes(); paintModes();
+  });
+  $('repeatBtn').addEventListener('click', () => {
+    repeatMode = repeatMode === 'off' ? 'all' : repeatMode === 'all' ? 'one' : 'off';
+    writeModes(); paintModes();
+  });
+
   $('fxBtn').addEventListener('click', () => {
     fxOn = !fxOn;
     $('fxBtn').setAttribute('aria-pressed', fxOn ? 'true' : 'false');
@@ -377,7 +484,7 @@
     set('play', () => { if (audio && audio.paused) toggle(); });
     set('pause', () => { if (audio && !audio.paused) toggle(); });
     set('previoustrack', prev);
-    set('nexttrack', next);
+    set('nexttrack', () => next(false));
   }
 
   // Offline is the point of this app, so it caches itself — unlike the ROCK-served one, which
@@ -391,14 +498,19 @@
   { const v = $('ver'); if (v) v.textContent = 'beta ' + VERSION.replace(/-beta$/, ''); }
 
   // Saved links come back on their own; picked files cannot, and the note says which is which.
+  readModes();
   queue = readLinks().map((l) => ({ name: l.name, url: l.url, link: true }));
+  if (shuffleOn) buildOrder();
   renderQueue();
   paintLib();
+  paintModes();
 
   window.__pocket = {
     version: VERSION,
     get links() { return readLinks(); },
+    get modes() { return { shuffle: shuffleOn, repeat: repeatMode }; },
     addLink,
+    removeAt,
     get queue() { return queue; },
     get current() { return current; },
     get bands() { return readBands(); },

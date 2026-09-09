@@ -174,5 +174,20 @@ html, body {
 .row.on { background: hsl(38 92% 55% / 0.14); box-shadow: inset 2px 0 0 0 var(--hive); }
 .row.on .nm { color: var(--hive); font-weight: 600; }
 
+/* Remove. Small, but still a 44px target — it sits next to the row that starts playback, and a
+   near miss either deletes the wrong thing or plays something you were deleting. */
+.rowdel {
+  flex: 0 0 auto; min-width: 44px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 0; color: var(--muted);
+  font-size: 1.1rem; line-height: 1; cursor: pointer;
+}
+.rowdel:active { color: #E0655A; }
+.ctl { position: relative; }
+.one {
+  position: absolute; top: 6px; right: 6px;
+  font-family: ui-monospace, Consolas, monospace; font-size: 0.55rem; font-weight: 700;
+}
+
 :focus-visible { outline: 2px solid var(--hive); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
