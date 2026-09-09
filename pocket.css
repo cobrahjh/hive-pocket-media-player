@@ -1,0 +1,146 @@
+/* Hive Pocket Media Player.
+   Hive's own palette — orange on dark, Inter — because it is a Hive app, but laid out for one
+   hand on a phone rather than an operator at a desk: nothing below 44px, nothing that needs a
+   precise tap, and the visuals given the room they earn. */
+
+:root {
+  --ground: #131110;
+  --panel:  #1B1817;
+  --line:   #332D2A;
+  --text:   #EFE9E3;
+  --muted:  #9C9089;
+  --hive:   #F6A518;
+  --radius: 8px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--ground);
+  color: var(--text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: contain;   /* no pull-to-refresh yanking the page mid-scrub */
+}
+
+.mono { font-family: ui-monospace, "JetBrains Mono", Consolas, monospace; }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;                    /* dvh, not vh: the phone's address bar changes the height */
+  padding: max(0.5rem, env(safe-area-inset-top)) 0.75rem max(0.5rem, env(safe-area-inset-bottom));
+  gap: 0.75rem;
+}
+
+/* ── header ── */
+.bar { display: flex; align-items: center; gap: 0.7rem; flex: 0 0 auto; }
+.mark { width: 30px; height: 30px; color: var(--hive); flex: 0 0 auto; }
+.titles { min-width: 0; flex: 1; }
+.bar h1 {
+  margin: 0; font-size: 0.95rem; font-weight: 800;
+  letter-spacing: 0.12em; line-height: 1.1;
+}
+.sub {
+  margin: 1px 0 0; font-size: 0.7rem; color: var(--muted);
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.icon-btn {
+  flex: 0 0 auto;
+  min-width: 44px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--muted); cursor: pointer;
+}
+.icon-btn:active { color: var(--hive); border-color: var(--hive); }
+
+/* ── stage: the two canvases stacked, effects over the equalizer ── */
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 130px;
+  background: #0C0B0A;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+#fxCanvas { pointer-events: none; transition: opacity 0.2s; }
+.stage-hint {
+  position: absolute; inset: auto 1rem 1rem; margin: 0;
+  text-align: center; font-size: 0.78rem; color: var(--muted); line-height: 1.5;
+}
+
+/* ── now playing ── */
+.now { flex: 0 0 auto; }
+.now-title {
+  font-size: 0.95rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.now-sub {
+  font-size: 0.72rem; color: var(--muted); margin-top: 2px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.scrub { display: flex; align-items: center; gap: 0.6rem; margin-top: 0.5rem; }
+.scrub .t { font-size: 0.68rem; color: var(--muted); flex: 0 0 auto; }
+#seek {
+  flex: 1; min-width: 0; height: 44px;          /* the target is 44px; the track is drawn thin */
+  background: none; -webkit-appearance: none; appearance: none;
+}
+#seek::-webkit-slider-runnable-track { height: 4px; border-radius: 2px; background: var(--line); }
+#seek::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 18px; height: 18px; margin-top: -7px;
+  border-radius: 50%; background: var(--hive); border: 0;
+}
+#seek::-moz-range-track { height: 4px; border-radius: 2px; background: var(--line); }
+#seek::-moz-range-thumb { width: 18px; height: 18px; border: 0; border-radius: 50%; background: var(--hive); }
+
+/* ── transport ── */
+.controls { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; gap: 0.75rem; }
+.ctl {
+  min-width: 44px; min-height: 44px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: none; border: 0; border-radius: var(--radius);
+  color: var(--muted); cursor: pointer;
+}
+.ctl[aria-pressed="true"] { color: var(--hive); }
+.ctl.play {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--hive); color: #131110;
+}
+.ctl:active { color: var(--hive); }
+.ctl.play:active { filter: brightness(1.12); color: #131110; }
+
+/* ── queue ── */
+.queue-wrap { flex: 0 1 auto; min-height: 0; display: flex; flex-direction: column; }
+.queue-head { font-size: 0.68rem; color: var(--muted); padding: 0 0 0.35rem; }
+.queue {
+  list-style: none; margin: 0; padding: 0;
+  overflow-y: auto; -webkit-overflow-scrolling: touch;
+  border-top: 1px solid var(--line);
+}
+.row {
+  display: flex; align-items: center; gap: 0.6rem;
+  min-height: 44px; padding: 0.45rem 0.25rem;
+  border-bottom: 1px solid var(--line);
+  cursor: pointer;
+}
+.row:last-child { border-bottom: 0; }
+.row .num { font-size: 0.66rem; color: var(--muted); width: 1.6rem; text-align: right; flex: 0 0 auto; }
+.row .nm { font-size: 0.85rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row.on { background: hsl(38 92% 55% / 0.14); box-shadow: inset 2px 0 0 0 var(--hive); }
+.row.on .nm { color: var(--hive); font-weight: 600; }
+
+:focus-visible { outline: 2px solid var(--hive); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

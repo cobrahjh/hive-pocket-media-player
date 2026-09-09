@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hive Pocket Media Player</title>
+<!--
+  Hive Pocket Media Player — v1.
+  =============================
+
+  WHAT THIS IS, AND WHAT IT DELIBERATELY IS NOT.
+
+  A phone music player with visuals that depends on NOTHING. No ROCK, no Hive service, no
+  Tailscale, no account, no network after the first load. You pick music that is already on
+  the device and it plays it, with the equalizer and the effects drawn from that audio.
+
+  It is a separate app from the Hive Visuals surfaces served by ROCK, and a separate git
+  repository, because it is meant to be handed to other people. The two renderers are COPIED
+  here rather than shared: they are pure (arrays in, canvas out) and a shared package across
+  two independent repos would cost more than the duplication.
+
+  v1 proves the player and the visuals. NOT in v1, on purpose: Google Drive, YouTube, Twitch,
+  chat, and anything that talks to a server.
+
+  THE ONE THING THAT SURPRISES PEOPLE. You are asked for your music every time the app starts
+  cold. That is not an oversight. The API that remembers a folder is desktop-only; on Android
+  a file pick hands over plain files and no lasting handle. The alternative is copying every
+  track into browser storage, which doubles the space your music takes and can be silently
+  evicted when the phone is short of room. Losing a library without being told is worse than
+  a tap, so v1 takes the tap.
+
+  CSP is deliberately tight: this app loads nothing from anywhere.
+-->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta name="theme-color" content="#131110">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<link rel="stylesheet" href="pocket.css">
+</head>
+<body>
+
+<div class="app">
+
+  <header class="bar">
+    <svg class="mark" viewBox="0 0 100 100" aria-hidden="true">
+      <polygon points="92,50 71,86 29,86 8,50 29,14 71,14" fill="none" stroke="currentColor" stroke-width="7" stroke-linejoin="round"/>
+      <rect x="38" y="42" width="8" height="24" rx="4" fill="currentColor"/>
+      <rect x="52" y="30" width="8" height="36" rx="4" fill="currentColor"/>
+      <rect x="66" y="38" width="8" height="28" rx="4" fill="currentColor"/>
+    </svg>
+    <div class="titles">
+      <h1>HIVE POCKET</h1>
+      <p class="sub" id="libNote">No music picked yet</p>
+    </div>
+    <button class="icon-btn" id="pickBtn" type="button" aria-label="Choose music">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+        <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
+      </svg>
+    </button>
+  </header>
+
+  <!-- The stage. Effects draw over the equalizer, both from the same analyser. -->
+  <section class="stage" id="stage" aria-label="Visuals">
+    <canvas id="eqCanvas"></canvas>
+    <canvas id="fxCanvas"></canvas>
+    <p class="stage-hint" id="stageHint">Pick some music and press play — the visuals follow the sound.</p>
+  </section>
+
+  <section class="now">
+    <div class="now-title" id="nowTitle">Nothing loaded</div>
+    <div class="now-sub" id="nowSub">Tap the folder button to choose music from this phone</div>
+    <div class="scrub">
+      <span class="t mono" id="tNow">0:00</span>
+      <input type="range" id="seek" min="0" max="0" step="0.1" value="0" aria-label="Position">
+      <span class="t mono" id="tEnd">0:00</span>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Transport">
+    <button class="ctl" id="prevBtn" type="button" aria-label="Previous">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
+    </button>
+    <button class="ctl play" id="playBtn" type="button" aria-label="Play">
+      <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" id="playIcon" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+      <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" id="pauseIcon" hidden aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
+    </button>
+    <button class="ctl" id="nextBtn" type="button" aria-label="Next">
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
+    </button>
+    <button class="ctl" id="fxBtn" type="button" aria-pressed="true" aria-label="Effects on">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M12 2l2.2 6.8H21l-5.5 4 2.1 6.8L12 15.6 6.4 19.6l2.1-6.8L3 8.8h6.8z"/></svg>
+    </button>
+  </section>
+
+  <section class="queue-wrap">
+    <div class="queue-head">
+      <span class="mono" id="queueCount"></span>
+    </div>
+    <ul class="queue" id="queue"></ul>
+  </section>
+
+  <!-- Not display:none — a hidden input still opens the picker, and this keeps it out of tab order. -->
+  <input type="file" id="filePick" accept="audio/*" multiple class="visually-hidden" tabindex="-1">
+  <div id="audioHost" class="visually-hidden"></div>
+</div>
+
+<script src="eq-render.js"></script>
+<script src="fx-render.js"></script>
+<script src="pocket.js"></script>
+</body>
+</html>
