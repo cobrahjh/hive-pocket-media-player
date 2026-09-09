@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.2.1-beta';
+  const VERSION = '1.3.0-beta';
 
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => {
@@ -94,10 +94,14 @@
 
   const MODES_KEY = 'hive-pocket.modes';
   const AMBIENT_KEY = 'hive-pocket.ambient';
-  // The renderer knows thirteen; storm and lightning are not offered, and are refused if one
-  // arrives from storage anyway. They flash, and this is a screen held close to a face.
+  // All thirteen the renderer knows. Storm and lightning flash, so they are last in the list,
+  // labelled as flashing, and never a default — but they ARE offered, which is the renderer's
+  // own policy: it keeps them out of the random roll because nobody chose them there, and
+  // allows them "when chosen by name". Its safety caps are hard constants no setting reaches:
+  // the whole-frame flash is capped at 0.12 alpha, strikes cannot land inside 800ms of each
+  // other, and at most six bolts live at once.
   const AMBIENTS = ['off', 'stars', 'snow', 'rain', 'fireflies', 'bubbles', 'leaves', 'petals',
-                    'sparks', 'meteors', 'clouds', 'fog'];
+                    'sparks', 'meteors', 'clouds', 'fog', 'storm', 'lightning'];
   function readAmbient() {
     try { const v = localStorage.getItem(AMBIENT_KEY); return AMBIENTS.includes(v) ? v : 'stars'; }
     catch (e) { return 'stars'; }
@@ -184,7 +188,8 @@
     // that draws is a burst on a detected beat, so a quiet passage, or anything without
     // percussion, leaves the stage empty and looks broken. A calm always-on weather layer
     // means there is something to see from the first second, and the beat bursts land on top.
-    // Stars, not storm or lightning: those flash, and this is a screen held close to a face.
+    // Stars by default, never storm or lightning: those flash, so they are only ever on
+    // because someone picked them in Settings.
     fx.setConfig({ ambient: readAmbient() });
     eq.start();
     fx.start();
@@ -255,6 +260,7 @@
   }
 
   // ── Playback ─────────────────────────────────────────────────────────────────────────
+  const TAP_NOTE = 'Tap play to start — the phone needs a tap before it makes sound.';
   function teardown() {
     if (!audio) return;
     try { audio.pause(); } catch (e) { /* already gone */ }
@@ -312,19 +318,28 @@
     $('stageHint').hidden = true;
     renderQueue();
     // The graph is built on a real gesture-driven play, which is when a phone will allow it.
-    el.play().then(() => {
-      if (ensureGraph(el)) { initVisuals(); startPump(); }
-      paintMediaSession();
-    }).catch(() => {
-      $('nowSub').textContent = 'Tap play to start — the phone needs a tap before it makes sound.';
+    el.play().then(started).catch(() => {
+      $('nowSub').textContent = TAP_NOTE;
       paintPlay();
     });
     paintPlay();
   }
 
+  // Playback ACTUALLY began. Only now can the graph be built: a phone refuses the first
+  // attempt, so this has to run on whichever attempt wins — the automatic one, or the tap
+  // that follows it. Hanging it on play() alone left a blocked first track playing with a
+  // dead stage for the rest of the session, because the resume path never built the graph.
+  function started() {
+    if (audio && ensureGraph(audio)) { initVisuals(); startPump(); }
+    // The tap happened. Leave any other note alone — a link playing without visuals has its
+    // own, and that one is still true.
+    if ($('nowSub').textContent === TAP_NOTE) $('nowSub').textContent = 'From this device';
+    paintMediaSession();
+  }
+
   function toggle() {
     if (!audio || current < 0) { if (queue.length) play(0); return; }
-    if (audio.paused) audio.play().catch(() => {});
+    if (audio.paused) audio.play().then(started).catch(() => {});
     else audio.pause();
   }
   // fromEnd: a track that ran out, as opposed to the button. Only the former stops at the end
@@ -448,8 +463,18 @@
   }
 
   // ── Settings sheet ───────────────────────────────────────────────────────────────────
+  // The OS asking for reduced motion is a real signal, but it is a DEFAULT and picking storm by
+  // name is a decision. A default does not get to overrule a decision that came after it, so this
+  // says so rather than silently forcing the picker back to stars — which would look like the
+  // setting was broken. The default is already a non-flashing mode; nothing here needs vetoing.
+  function reducedMotion() {
+    try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches === true; }
+    catch (e) { return false; }
+  }
+
   function paintSheet() {
     $('ambientSel').value = readAmbient();
+    $('motionNote').hidden = !reducedMotion();
     const n = readLinks().length;
     $('linkCount').textContent = n ? (n + ' saved. They come back every time you open the app.') : 'None saved.';
     $('forgetLinks').disabled = !n;
@@ -566,5 +591,10 @@
     get current() { return current; },
     get bands() { return readBands(); },
     get graphReady() { return !!(ctx && analyser && srcNode); },
+    // Read-only counts from the effects renderer. Storm and lightning draw bolts as an event
+    // subsystem separate from the weather particles, so 'is lightning actually striking' cannot
+    // be answered from the config — only from here.
+    get fxStats() { return fx ? fx.stats() : null; },
+    get fxAmbient() { return fx ? fx.getAmbientMode() : null; },
   };
 })();

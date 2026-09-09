@@ -40,6 +40,25 @@ Your music never leaves the device. It is not uploaded, not copied, and not cach
 The app makes no network requests of its own once loaded — the content security policy in
 `index.html` blocks anything else from trying.
 
+## Flashing effects
+
+Two background effects flash the screen: **storm** and **lightning**. They are in the picker
+because they are worth having, and they are never chosen for you — the app falls back to stars,
+and neither is ever picked at random. If flashing bothers you, or you are photosensitive, leave
+those two alone.
+
+Choose one and three limits apply that no setting can raise: the whole-frame flash never exceeds
+0.12 opacity, two strikes can never land inside 0.8 seconds of each other, and at most six bolts
+are alive at once.
+
+## Tests
+
+    node tests/ambient-smoke.js     the picker, and whether a flashing mode actually strikes
+    node tests/resume-smoke.js      a play blocked by the phone, then resumed by a tap
+
+Both run under plain Node against stub DOM objects, and both mutate the code under test to prove
+their own assertions can fail.
+
 ## Built from
 
 The equalizer and effects renderers come from [Hive Visuals](https://github.com/cobrahjh), where
