@@ -15,6 +15,11 @@
 (() => {
   'use strict';
 
+  // THE version. It is shown on screen and it names the service worker's cache, so a build
+  // and the files it cached can never disagree about which build they are. Bump this ONE
+  // line for a release; sw.js reads the same string.
+  const VERSION = '1.0.0-beta';
+
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => {
     if (!isFinite(s) || s < 0) s = 0;
@@ -268,7 +273,11 @@
     navigator.serviceWorker.register('sw.js').catch((err) => console.warn('[pocket] no worker: ' + err.message));
   }
 
+  // Paint the version chip. Text, never innerHTML — it ends up beside the app name.
+  { const v = $('ver'); if (v) v.textContent = 'beta ' + VERSION.replace(/-beta$/, ''); }
+
   window.__pocket = {
+    version: VERSION,
     get queue() { return queue; },
     get current() { return current; },
     get bands() { return readBands(); },

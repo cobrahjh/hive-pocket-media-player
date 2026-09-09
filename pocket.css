@@ -49,6 +49,15 @@ html, body {
   margin: 0; font-size: 0.95rem; font-weight: 800;
   letter-spacing: 0.12em; line-height: 1.1;
 }
+/* Version chip. Always on screen: this is a beta handed to other people, and a bug report
+   that does not say which build it came from costs more than the pixels. */
+.ver {
+  font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+  font-size: 0.58rem; font-weight: 600; letter-spacing: 0.08em;
+  color: var(--hive); border: 1px solid var(--hive); border-radius: 3px;
+  padding: 1px 4px; margin-left: 6px; vertical-align: 2px; white-space: nowrap;
+}
+
 .sub {
   margin: 1px 0 0; font-size: 0.7rem; color: var(--muted);
   font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;

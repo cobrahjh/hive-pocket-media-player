@@ -13,7 +13,10 @@
  * Nothing about the user's music is cached. Their files are never uploaded, never copied, and
  * never touched by this worker — the app reads them straight off the device.
  */
-const VERSION = 'v1';
+// Kept in step with VERSION in pocket.js BY HAND — they are separate scripts and cannot
+// import from one another. Bump both together; the chip on screen is what a bug report will
+// quote, and a cache named after a different build is how a stale file survives a release.
+const VERSION = '1.0.0-beta';
 const CACHE = 'hive-pocket-' + VERSION;
 
 // The whole app. It is small on purpose, and every one of these must exist or install fails.
