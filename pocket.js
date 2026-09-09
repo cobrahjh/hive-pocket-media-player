@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.1.0-beta';
+  const VERSION = '1.2.0-beta';
 
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => {
@@ -93,6 +93,16 @@
   let order = null, orderPos = -1;
 
   const MODES_KEY = 'hive-pocket.modes';
+  const AMBIENT_KEY = 'hive-pocket.ambient';
+  // The renderer knows thirteen; storm and lightning are not offered, and are refused if one
+  // arrives from storage anyway. They flash, and this is a screen held close to a face.
+  const AMBIENTS = ['off', 'stars', 'snow', 'rain', 'fireflies', 'bubbles', 'leaves', 'petals',
+                    'sparks', 'meteors', 'clouds', 'fog'];
+  function readAmbient() {
+    try { const v = localStorage.getItem(AMBIENT_KEY); return AMBIENTS.includes(v) ? v : 'stars'; }
+    catch (e) { return 'stars'; }
+  }
+  function writeAmbient(v) { try { localStorage.setItem(AMBIENT_KEY, v); } catch (e) {} }
   function readModes() {
     try {
       const m = JSON.parse(localStorage.getItem(MODES_KEY) || '{}');
@@ -175,7 +185,7 @@
     // percussion, leaves the stage empty and looks broken. A calm always-on weather layer
     // means there is something to see from the first second, and the beat bursts land on top.
     // Stars, not storm or lightning: those flash, and this is a screen held close to a face.
-    fx.setConfig({ ambient: "stars" });
+    fx.setConfig({ ambient: readAmbient() });
     eq.start();
     fx.start();
   }
@@ -437,7 +447,47 @@
     $('libNote').textContent = bits.length ? bits.join(' · ') : 'No music picked yet';
   }
 
+  // ── Settings sheet ───────────────────────────────────────────────────────────────────
+  function paintSheet() {
+    $('ambientSel').value = readAmbient();
+    const n = readLinks().length;
+    $('linkCount').textContent = n ? (n + ' saved. They come back every time you open the app.') : 'None saved.';
+    $('forgetLinks').disabled = !n;
+    $('aboutVer').textContent = 'beta ' + VERSION.replace(/-beta$/, '');
+  }
+  function openSheet() {
+    paintSheet();
+    $('sheetBack').hidden = false; $('sheet').hidden = false;
+    $('menuBtn').setAttribute('aria-expanded', 'true');
+    $('sheetClose').focus();
+  }
+  function closeSheet() {
+    $('sheetBack').hidden = true; $('sheet').hidden = true;
+    $('menuBtn').setAttribute('aria-expanded', 'false');
+    $('menuBtn').focus();
+  }
+
   // ── Wiring ───────────────────────────────────────────────────────────────────────────
+  $('menuBtn').addEventListener('click', () => ($('sheet').hidden ? openSheet() : closeSheet()));
+  $('sheetClose').addEventListener('click', closeSheet);
+  $('sheetBack').addEventListener('click', closeSheet);
+  document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !$('sheet').hidden) closeSheet(); });
+  $('ambientSel').addEventListener('change', () => {
+    const v = AMBIENTS.includes($('ambientSel').value) ? $('ambientSel').value : 'stars';
+    writeAmbient(v);
+    // Live: the renderer takes a new config without restarting, so the change is visible while
+    // the sheet is still open rather than on the next track.
+    if (fx) fx.setConfig({ ambient: v });
+  });
+  $('forgetLinks').addEventListener('click', () => {
+    writeLinks([]);
+    // Take them out of the queue too — the queue IS the library for links, and leaving them
+    // playing after "forget all" would make the button look like it did nothing.
+    queue = queue.filter((t) => !t.link);
+    if (current >= queue.length) { teardown(); current = -1; paintPlay(); }
+    renderQueue(); paintLib(); paintSheet();
+  });
+
   $('pickBtn').addEventListener('click', () => $('filePick').click());
   $('linkBtn').addEventListener('click', () => {
     const row = $('linkRow');
@@ -509,6 +559,7 @@
     version: VERSION,
     get links() { return readLinks(); },
     get modes() { return { shuffle: shuffleOn, repeat: repeatMode }; },
+    get ambient() { return readAmbient(); },
     addLink,
     removeAt,
     get queue() { return queue; },

@@ -189,5 +189,33 @@ html, body {
   font-family: ui-monospace, Consolas, monospace; font-size: 0.55rem; font-weight: 700;
 }
 
+/* ── settings sheet ── */
+.sheet-back { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 20; }
+.sheet {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
+  max-height: 82dvh; overflow-y: auto;
+  background: var(--panel); border-top: 1px solid var(--line);
+  border-radius: 14px 14px 0 0;
+  padding: 0.6rem 1rem max(1rem, env(safe-area-inset-bottom));
+  display: flex; flex-direction: column; gap: 1.1rem;
+}
+.sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 0.2rem; }
+.sheet h2 { margin: 0; font-size: 1rem; font-weight: 700; }
+.set { display: flex; flex-direction: column; gap: 0.4rem; }
+.set-lab { font-size: 0.8rem; font-weight: 600; }
+.set-note { margin: 0; font-size: 0.72rem; color: var(--muted); line-height: 1.55; }
+#ambientSel {
+  min-height: 44px; padding: 0 0.6rem;
+  background: var(--ground); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font: inherit; font-size: 16px;   /* 16px or Android zooms on focus */
+}
+.sheet-btn {
+  min-height: 48px; width: 100%;
+  background: var(--hive); color: #131110; border: 0; border-radius: var(--radius);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.sheet-btn.danger { background: none; color: #E0655A; border: 1px solid #E0655A; }
+
 :focus-visible { outline: 2px solid var(--hive); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

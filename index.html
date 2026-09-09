@@ -63,6 +63,11 @@
       <h1>HIVE POCKET <span class="ver" id="ver">beta</span></h1>
       <p class="sub" id="libNote">No music picked yet</p>
     </div>
+    <button class="icon-btn" id="menuBtn" type="button" aria-label="Settings" aria-expanded="false">
+      <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
+        <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/>
+      </svg>
+    </button>
     <button class="icon-btn" id="linkBtn" type="button" aria-label="Add a link" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
         <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
@@ -133,6 +138,54 @@
   <!-- Not display:none — a hidden input still opens the picker, and this keeps it out of tab order. -->
   <input type="file" id="filePick" accept="audio/*" multiple class="visually-hidden" tabindex="-1">
   <div id="audioHost" class="visually-hidden"></div>
+  <!-- Settings. A sheet from the bottom, because that is where a thumb is. -->
+  <div class="sheet-back" id="sheetBack" hidden></div>
+  <section class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+    <div class="sheet-grip" aria-hidden="true"></div>
+    <h2 id="sheetTitle">Settings</h2>
+
+    <div class="set">
+      <label class="set-lab" for="ambientSel">Background effect</label>
+      <select id="ambientSel">
+        <option value="off">None</option>
+        <option value="stars">Stars</option>
+        <option value="snow">Snow</option>
+        <option value="rain">Rain</option>
+        <option value="fireflies">Fireflies</option>
+        <option value="bubbles">Bubbles</option>
+        <option value="leaves">Leaves</option>
+        <option value="petals">Petals</option>
+        <option value="sparks">Sparks</option>
+        <option value="meteors">Meteors</option>
+        <option value="clouds">Clouds</option>
+        <option value="fog">Fog</option>
+      </select>
+      <p class="set-note">Always drawing, behind the bursts that land on the beat. Storm and
+        lightning are left out on purpose — they flash.</p>
+    </div>
+
+    <div class="set">
+      <span class="set-lab">Saved links</span>
+      <p class="set-note" id="linkCount">None saved.</p>
+      <button class="sheet-btn danger" id="forgetLinks" type="button">Forget all saved links</button>
+    </div>
+
+    <div class="set">
+      <span class="set-lab">About</span>
+      <p class="set-note">
+        <strong>Hive Pocket Media Player</strong> <span id="aboutVer" class="mono"></span><br>
+        Everything runs on this phone. Your music is never uploaded and the app makes no
+        requests of its own once loaded.
+      </p>
+      <p class="set-note">
+        It asks for your music each time it starts cold: a phone will not let a web app
+        remember a folder, and copying every track into storage would double the space and
+        could be wiped without warning. Saved links do come back.
+      </p>
+    </div>
+
+    <button class="sheet-btn" id="sheetClose" type="button">Done</button>
+  </section>
 </div>
 
 <script src="eq-render.js"></script>
