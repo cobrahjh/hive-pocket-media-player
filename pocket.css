@@ -79,6 +79,23 @@ html, body {
 }
 .icon-btn:active { color: var(--hive); border-color: var(--hive); }
 
+/* ── adding a link ── */
+.linkrow { display: flex; gap: 0.5rem; flex: 0 0 auto; }
+#linkInput {
+  flex: 1; min-width: 0; min-height: 44px; padding: 0 0.6rem;
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font: inherit; font-size: 16px;   /* 16px or Android zooms the page on focus */
+}
+#linkInput:focus { border-color: var(--hive); outline: none; }
+.linkadd {
+  flex: 0 0 auto; min-height: 44px; padding: 0 1rem;
+  background: var(--hive); color: #131110; border: 0; border-radius: var(--radius);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.linknote { margin: 0; font-size: 0.72rem; color: var(--muted); flex: 0 0 auto; }
+.linknote.bad { color: #E0655A; }
+
 /* ── stage: the two canvases stacked, effects over the equalizer ── */
 .stage {
   position: relative;

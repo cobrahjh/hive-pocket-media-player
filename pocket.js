@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.0.1-beta';
+  const VERSION = '1.0.2-beta';
 
   const $ = (id) => document.getElementById(id);
   const fmt = (s) => {
@@ -28,8 +28,61 @@
     return m + ':' + (r < 10 ? '0' : '') + r;
   };
 
+  // ── Saved links ──────────────────────────────────────────────────────────────────────
+  // The ONLY thing this app can remember between sessions. A picked file cannot be kept — the
+  // browser hands over the bytes and nothing durable — but a link is a string, so it survives.
+  const LINKS_KEY = 'hive-pocket.links';
+
+  function readLinks() {
+    try {
+      const raw = JSON.parse(localStorage.getItem(LINKS_KEY) || '[]');
+      if (!Array.isArray(raw)) return [];
+      // Rebuilt from an allowlist rather than trusted: this comes back from storage a person or
+      // another script could have edited, and a bad `url` here becomes a <audio src>.
+      return raw
+        .map((x) => (x && typeof x === 'object' ? { name: String(x.name || '').slice(0, 200), url: String(x.url || '') } : null))
+        .filter((x) => x && safeUrl(x.url));
+    } catch (e) { return []; }
+  }
+  function writeLinks(list) {
+    try { localStorage.setItem(LINKS_KEY, JSON.stringify(list.slice(0, 200))); } catch (e) { /* private mode, full disk */ }
+  }
+  // https only, and only ever handed to a media element. Rejecting everything else keeps
+  // javascript:, data: and file: out of an attribute that would honour them.
+  function safeUrl(u) {
+    try {
+      // NO BASE. With one, 'not a link' resolves to a path on this origin and sails through as
+      // http — which is how a typed sentence became a saved track. An absolute URL or nothing.
+      const p = new URL(u);
+      if (p.protocol !== 'https:' && p.protocol !== 'http:') return false;
+      if (!p.hostname) return false;
+      // An http link on an https page is refused by the browser as mixed content, and the
+      // content policy in index.html refuses it too. Both are silent. Rule it out HERE so the
+      // person is told when they paste it, not left with a track that never starts.
+      if (location.protocol === 'https:' && p.protocol === 'http:') return false;
+      return true;
+    } catch (e) { return false; }
+  }
+  // Why a link was rejected, in the words of the thing that rejected it.
+  function whyBad(u) {
+    try {
+      const p = new URL(u);
+      if (location.protocol === 'https:' && p.protocol === 'http:') {
+        return 'That link is http. This app is served over https, and browsers refuse to play '
+             + 'insecure media on a secure page. Try the https:// version of it.';
+      }
+      return 'That is not a web link. It needs to start with https://';
+    } catch (e) { return 'That is not a web link. It needs to start with https://'; }
+  }
+  function nameFromUrl(u) {
+    try {
+      const last = decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || '');
+      return (last.replace(/\.[^.]+$/, '') || new URL(u).hostname).slice(0, 200);
+    } catch (e) { return u.slice(0, 60); }
+  }
+
   // ── State ────────────────────────────────────────────────────────────────────────────
-  let queue = [];          // { name, url, file }
+  let queue = [];          // { name, url, file?, link? }
   let current = -1;
   let audio = null;
   let fxOn = true;
@@ -154,18 +207,37 @@
     audio.addEventListener('pause', () => { paintPlay(); });
     audio.addEventListener('ended', () => next());
     audio.addEventListener('error', () => {
-      $('nowSub').textContent = 'That file would not play — skipping.';
-      next();
+      const t = queue[current];
+      // A link that refused the CORS request: drop the request and take the audio without
+      // visuals, rather than skipping a track that would have played perfectly well.
+      if (t && t.link && audio.corsTried) {
+        $('nowSub').textContent = 'Playing without visuals — that host does not allow this page to read its audio.';
+        play(current, { noCors: true });
+        return;
+      }
+      $('nowSub').textContent = t && t.link
+        ? 'That link would not play. It has to point straight at an audio file.'
+        : 'That file would not play — skipping.';
+      if (!t || !t.link) next();
     });
     return audio;
   }
 
-  function play(i) {
+  function play(i, opts) {
     const t = queue[i];
     if (!t) return;
     const el = ensureAudio();
     teardown();
     current = i;
+    // CROSS-ORIGIN AUDIO AND THE ANALYSER. A media element loaded from another origin without
+    // CORS permission is opaque: it plays, but Web Audio refuses to let this page read it and
+    // every band comes back zero, so the visuals sit dead with no error anywhere. Asking for
+    // CORS is the only way to get them — and asking fails outright on a host that does not
+    // grant it, which is why the error handler below retries once WITHOUT it. Sound first,
+    // visuals if the host allows them.
+    if (t.link && !(opts && opts.noCors)) el.crossOrigin = 'anonymous';
+    else el.removeAttribute('crossorigin');
+    el.corsTried = !!(t.link && !(opts && opts.noCors));
     el.src = t.url;
     $('nowTitle').textContent = t.name;
     $('nowSub').textContent = 'From this device';
@@ -240,12 +312,54 @@
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
       .map((f) => ({ name: f.name.replace(/\.[^.]+$/, ''), url: URL.createObjectURL(f), file: f }));
     current = -1;
-    $('libNote').textContent = queue.length + ' track' + (queue.length === 1 ? '' : 's') + ' on this device';
+    // Saved links are kept: picking files replaces the FILES, not the library.
+    queue = queue.concat(readLinks().map((l) => ({ name: l.name, url: l.url, link: true })));
     renderQueue();
+    paintLib();
+  }
+
+  function saveNote(msg, bad) {
+    const el = $('linkNote');
+    el.textContent = msg || '';
+    el.hidden = !msg;
+    el.classList.toggle('bad', !!bad);
+  }
+
+  function addLink(raw) {
+    const u = String(raw || '').trim();
+    if (!u) return;
+    if (!safeUrl(u)) { saveNote(whyBad(u), true); return; }
+    const links = readLinks();
+    if (links.some((l) => l.url === u)) { saveNote('That link is already saved.'); return; }
+    const entry = { name: nameFromUrl(u), url: u };
+    links.push(entry);
+    writeLinks(links);
+    queue.push({ name: entry.name, url: entry.url, link: true });
+    renderQueue();
+    $('linkInput').value = '';
+    saveNote('Saved. It will still be here next time you open the app.');
+    paintLib();
+  }
+
+  function paintLib() {
+    const files = queue.filter((t) => !t.link).length;
+    const links = queue.filter((t) => t.link).length;
+    const bits = [];
+    if (files) bits.push(files + ' from this device');
+    if (links) bits.push(links + ' saved link' + (links === 1 ? '' : 's'));
+    $('libNote').textContent = bits.length ? bits.join(' · ') : 'No music picked yet';
   }
 
   // ── Wiring ───────────────────────────────────────────────────────────────────────────
   $('pickBtn').addEventListener('click', () => $('filePick').click());
+  $('linkBtn').addEventListener('click', () => {
+    const row = $('linkRow');
+    row.hidden = !row.hidden;
+    $('linkBtn').setAttribute('aria-expanded', row.hidden ? 'false' : 'true');
+    if (!row.hidden) $('linkInput').focus();
+  });
+  $('linkAdd').addEventListener('click', () => addLink($('linkInput').value));
+  $('linkInput').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); addLink($('linkInput').value); } });
   $('filePick').addEventListener('change', (e) => adopt(e.target.files));
   $('playBtn').addEventListener('click', toggle);
   $('nextBtn').addEventListener('click', next);
@@ -276,8 +390,15 @@
   // Paint the version chip. Text, never innerHTML — it ends up beside the app name.
   { const v = $('ver'); if (v) v.textContent = 'beta ' + VERSION.replace(/-beta$/, ''); }
 
+  // Saved links come back on their own; picked files cannot, and the note says which is which.
+  queue = readLinks().map((l) => ({ name: l.name, url: l.url, link: true }));
+  renderQueue();
+  paintLib();
+
   window.__pocket = {
     version: VERSION,
+    get links() { return readLinks(); },
+    addLink,
     get queue() { return queue; },
     get current() { return current; },
     get bands() { return readBands(); },
