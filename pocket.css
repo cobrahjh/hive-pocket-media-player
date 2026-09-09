@@ -15,6 +15,12 @@
 
 * { box-sizing: border-box; }
 
+/* `hidden` is only a DEFAULT of display:none, and ANY author rule that sets display beats it.
+   The transport swaps its play and pause glyphs with the attribute, and .stage canvas/.ctl svg
+   rules were enough to make both draw at once — a play button wearing a pause symbol over it.
+   Force it, and the attribute means what it says everywhere on the page. */
+[hidden] { display: none !important; }
+
 html, body {
   margin: 0;
   height: 100%;
