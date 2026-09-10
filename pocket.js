@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.8.0-beta';
+  const VERSION = '1.9.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -196,6 +196,51 @@
   }
   function writeSens(v) { try { localStorage.setItem(SENS_KEY, v); } catch (e) {} }
 
+  // Colour. The renderer has carried five palettes the whole time and this app never asked for
+  // one, so every build until now was orange. 'auto' on the ambient layer means it follows the
+  // main palette, so one choice colours both the weather and the bursts.
+  const PAL_KEY = 'hive-pocket.palette';
+  const PALETTES = ['hive', 'fire', 'ice', 'vapor', 'mono', 'random'];
+  function readPalette() {
+    try { const v = localStorage.getItem(PAL_KEY); return PALETTES.includes(v) ? v : 'hive'; }
+    catch (e) { return 'hive'; }
+  }
+  function writePalette(v) { try { localStorage.setItem(PAL_KEY, v); } catch (e) {} }
+
+  // Looks. Four dropdowns is where good combinations go to die: the pleasure here is in
+  // pairings, and nobody finds a pairing by working through a settings list. Each of these sets
+  // all four at once. The dropdowns stay underneath for anyone who wants them, and the moment
+  // one of them is moved the picker says Custom rather than keeping a name that is no longer true.
+  const LOOKS = {
+    // Deliberately the app's shipped defaults, so a fresh install reads as Hive rather than
+    // as Custom — "you have not chosen anything" is a poor first thing to say.
+    hive:    { effect: 'fireworks', palette: 'hive',  ambient: 'stars',    sens: 'easy' },
+    bonfire: { effect: 'embers',    palette: 'fire',  ambient: 'sparks',   sens: 'easy' },
+    freeze:  { effect: 'nova',      palette: 'ice',   ambient: 'snow',     sens: 'easy' },
+    drive:   { effect: 'confetti',  palette: 'vapor', ambient: 'meteors',  sens: 'easy' },
+    garden:  { effect: 'hearts',    palette: 'vapor', ambient: 'petals',   sens: 'easy' },
+    ink:     { effect: 'fountain',  palette: 'mono',  ambient: 'fog',      sens: 'room' },
+    storm:   { effect: 'fireworks', palette: 'ice',   ambient: 'storm',    sens: 'room' },
+  };
+
+  function currentLook() {
+    const now = { effect: readBeatEffect(), palette: readPalette(), ambient: readAmbient(), sens: readSens() };
+    for (const [name, l] of Object.entries(LOOKS)) {
+      if (l.effect === now.effect && l.palette === now.palette
+          && l.ambient === now.ambient && l.sens === now.sens) return name;
+    }
+    return 'custom';
+  }
+
+  function applyLook(name) {
+    const l = LOOKS[name];
+    if (!l) return;                       // 'custom' is a readout, never a thing to apply
+    writeBeatEffect(l.effect); writePalette(l.palette);
+    writeAmbient(l.ambient); writeSens(l.sens);
+    applyFx();
+    paintSheet();
+  }
+
   // Hiding the player, not removing it. With the microphone able to see sound this app does not
   // own, the visuals stand on their own and the transport is often just something in the way.
   // Everything stays wired: turn this off and the queue, the saved links and the controls are
@@ -254,6 +299,7 @@
     if (!fx) return;
     fx.setConfig({
       ambient: readAmbient(),
+      palette: readPalette(),
       beat: { effect: readBeatEffect(), sensitivity: SENS[readSens()] },
     });
   }
@@ -1034,11 +1080,15 @@
     catch (e) { return false; }
   }
 
+  function paintLook() { const el = $('lookSel'); if (el) el.value = currentLook(); }
+
   function paintSheet() {
     $('ambientSel').value = readAmbient();
     $('beatSel').value = readBeatEffect();
     $('sensSel').value = readSens();
     $('hidePlayer').checked = readHidePlayer();
+    $('palSel').value = readPalette();
+    paintLook();
     $('visualsSel').value = visuals;
     $('motionNote').hidden = !reducedMotion();
     const n = readLinks().length;
@@ -1071,6 +1121,7 @@
   $('ambientSel').addEventListener('change', () => {
     const v = AMBIENTS.includes($('ambientSel').value) ? $('ambientSel').value : 'stars';
     writeAmbient(v);
+    paintLook();
     // Live: the renderer takes a new config without restarting, so the change is visible while
     // the sheet is still open rather than on the next track.
     applyFx();
@@ -1084,6 +1135,12 @@
     renderQueue(); paintLib(); paintSheet();
   });
 
+  $('lookSel').addEventListener('change', () => applyLook($('lookSel').value));
+  $('palSel').addEventListener('change', () => {
+    writePalette(PALETTES.includes($('palSel').value) ? $('palSel').value : 'hive');
+    applyFx(); paintLook();
+  });
+
   $('hidePlayer').addEventListener('change', () => {
     writeHidePlayer($('hidePlayer').checked);
     applyHidePlayer();
@@ -1091,13 +1148,13 @@
 
   $('sensSel').addEventListener('change', () => {
     writeSens(SENS[$('sensSel').value] ? $('sensSel').value : 'easy');
-    applyFx();
+    applyFx(); paintLook();
   });
 
   $('beatSel').addEventListener('change', () => {
     const v = BEAT_EFFECTS.includes($('beatSel').value) ? $('beatSel').value : 'fireworks';
     writeBeatEffect(v);
-    applyFx();
+    applyFx(); paintLook();
   });
 
   $('micBtn').addEventListener('click', () => { if (micLive) micStop(); else micStart(true); });
@@ -1205,6 +1262,8 @@
     get links() { return readLinks(); },
     get modes() { return { shuffle: shuffleOn, repeat: repeatMode }; },
     get ambient() { return readAmbient(); },
+    get palette() { return readPalette(); },
+    get look() { return currentLook(); },
     get beatEffect() { return readBeatEffect(); },
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
     get playerHidden() { return readHidePlayer(); },
