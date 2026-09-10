@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.9.0-beta';
+  const VERSION = '1.9.1-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -295,7 +295,6 @@
   // effect, and a call carrying only `beat` silently resets the weather. Every setting this app
   // owns goes in every call.
   function applyFx() {
-    BEAT_RISE = SENS[readSens()];   // so the readout tests the number actually in force
     if (!fx) return;
     fx.setConfig({
       ambient: readAmbient(),
@@ -366,17 +365,6 @@
   // Two analysers rather than one, so that line can never be shared by accident.
   const MIC_KEY = 'hive-pocket.mic';
   let micAnalyser = null, micSrc = null, micStream = null, micLive = false, micArmed = false;
-  // Beat diagnostics. The effects renderer fires a burst only when the average of the lowest
-  // four bands, 0-1, clears a fixed floor of 0.12 AND beats its own running average. A phone
-  // microphone may simply never put that much energy in the deep bass, in which case the
-  // weather layer draws and nothing ever bursts — which looks identical to a broken renderer.
-  // These numbers are the difference between knowing that and guessing at it.
-  // Both must match fx-render.js pushBands(), and BOTH tests have to pass for a burst:
-  // an absolute floor, and a rise over the renderer's own running average of the bass.
-  const BEAT_FLOOR = 0.12;
-  let BEAT_RISE = 1.35;             // kept in step with the chosen sensitivity
-  let micBass = 0, micPeak = 0, micPeakAt = 0, micEverFired = false;
-  let micAvg = 0, micRatio = 0, micRatioPeak = 0, micRatioAt = 0;
 
   function readMicAuto() {
     try { return JSON.parse(localStorage.getItem(MIC_KEY) || '{}').auto === true; }
@@ -622,54 +610,9 @@
     if (b) {
       if (eq && eqShown()) eq.push(b);
       if (fx && fxShown()) fx.pushBands(b);
-      if (micLive) measureBeat(b);
     }
     requestAnimationFrame(pump);
   }
-  // Recomputed here rather than read from the renderer: the renderer keeps no history, and a
-  // ten-second peak is the number that answers "is it ever close?" when the live value is not.
-  function measureBeat(bands) {
-    let bass = 0;
-    const n = Math.min(4, bands.length);
-    for (let i = 0; i < n; i++) { const v = bands[i]; bass += Number.isFinite(v) ? v : 0; }
-    micBass = bass / (n * 255);
-    // The same recursive average the renderer keeps, with the same coefficients, so the ratio
-    // below is the one it is actually testing rather than an approximation of it.
-    micAvg = micAvg * 0.94 + micBass * 0.06;
-    micRatio = micAvg > 0 ? micBass / micAvg : 0;
-    const now = performance.now();
-    if (micBass > micPeak || now - micPeakAt > 10000) { micPeak = micBass; micPeakAt = now; }
-    // Only count the rise while there is real signal: the ratio goes wild in near silence,
-    // which is the exact case the floor exists to reject, and reporting it would mislead.
-    if (micBass >= BEAT_FLOOR) {
-      if (micRatio > micRatioPeak || now - micRatioAt > 10000) { micRatioPeak = micRatio; micRatioAt = now; }
-    } else if (now - micRatioAt > 10000) { micRatioPeak = 0; micRatioAt = now; }
-    if (fx && fx.stats && fx.stats().parts > 0) micEverFired = true;
-  }
-
-  function micDiag() {
-    const el = $('micDiag');
-    if (!el) return;
-    if (!micLive) { el.hidden = true; return; }
-    el.hidden = false;
-    // parts, not shells: only the fireworks effect makes shells, so counting those reported
-    // zero bursts while confetti was firing perfectly well. parts is every beat-spawned
-    // particle; the weather layer is counted separately as `ambient` and never lands here.
-    const st = (fx && fx.stats) ? fx.stats() : null;
-    const shells = st ? st.parts : 0;
-    const loudEnough = micPeak >= BEAT_FLOOR;
-    const risesEnough = micRatioPeak >= BEAT_RISE;
-    // Two tests, reported separately, because they fail for completely different reasons and
-    // the fix is different for each. Loud enough but never rising means the sound is there and
-    // too steady — room reverb smearing the transients. Never loud enough means the microphone
-    // is not putting energy where the detector looks at all.
-    el.textContent =
-      'loud: ' + micPeak.toFixed(3) + '/' + BEAT_FLOOR.toFixed(2) + (loudEnough ? ' ok' : ' NO') +
-      '  ·  rise: ' + micRatioPeak.toFixed(2) + '/' + BEAT_RISE.toFixed(2) + (risesEnough ? ' ok' : ' NO') +
-      '  ·  burst bits ' + shells + (micEverFired ? '' : ' (none yet)') +
-      '  ·  now ' + micBass.toFixed(3);
-  }
-
   function startPump() { if (!pumping) { pumping = true; requestAnimationFrame(pump); } }
   function stopPump() { pumping = false; }
 
@@ -1096,18 +1039,13 @@
     $('forgetLinks').disabled = !n;
     $('aboutVer').textContent = 'beta ' + VERSION.replace(/-beta$/, '');
   }
-  let diagTimer = 0;
   function openSheet() {
     paintSheet();
-    micDiag();
-    clearInterval(diagTimer);
-    diagTimer = setInterval(micDiag, 250);
     $('sheetBack').hidden = false; $('sheet').hidden = false;
     $('menuBtn').setAttribute('aria-expanded', 'true');
     $('sheetClose').focus();
   }
   function closeSheet() {
-    clearInterval(diagTimer); diagTimer = 0;
     $('sheetBack').hidden = true; $('sheet').hidden = true;
     $('menuBtn').setAttribute('aria-expanded', 'false');
     $('menuBtn').focus();
@@ -1275,10 +1213,6 @@
     get graphReady() { return !!(ctx && analyser && srcNode); },
     get micLive() { return micLive; },
     get micAuto() { return readMicAuto(); },
-    get beatDiag() {
-      return { bass: micBass, peak10s: micPeak, floor: BEAT_FLOOR,
-               ratio: micRatio, ratioPeak10s: micRatioPeak, rise: BEAT_RISE, everFired: micEverFired };
-    },
     // Reports only that the microphone has an analyser of its own. The guarantee that it never
     // reaches the speakers is STRUCTURAL — nothing is ever connected downstream of it — and no
     // getter can prove that from here; read the three connect() calls in this file instead.
