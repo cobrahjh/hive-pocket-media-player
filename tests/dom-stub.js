@@ -272,6 +272,17 @@ function boot(opts) {
   };
   const resizes = { eq: 0, fx: 0 };
   const fires = [];
+  // A real window has addEventListener; this sandbox is the window, so it needs one or the app
+  // dies at load the moment it listens for resize or orientationchange. Caught by the tutorial,
+  // which measures its ring again when the screen changes shape — a listener no earlier version
+  // of this app happened to need.
+  const winHandlers = {};
+  sandbox.addEventListener = (t, fn) => { (winHandlers[t] = winHandlers[t] || []).push(fn); };
+  sandbox.removeEventListener = (t, fn) => {
+    const l = winHandlers[t]; if (!l) return;
+    const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1);
+  };
+  sandbox.winHandlers = winHandlers;
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);

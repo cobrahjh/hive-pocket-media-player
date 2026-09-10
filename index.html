@@ -63,7 +63,7 @@
     </svg>
     <div class="titles">
       <h1>HIVE POCKET</h1>
-      <p class="sub"><span class="ver" id="ver">beta</span><span id="libNote">No music picked yet</span></p>
+      <p class="sub"><span class="ver" id="ver">beta</span><span id="libNote"></span></p>
     </div>
     <!-- Surprise me, on the header rather than only in the menu. Once the app is set up this is
          the most-used control there is, and a control you reach for constantly does not belong
@@ -92,6 +92,25 @@
       </svg>
     </button>
   </header>
+
+  <!-- THE TUTORIAL. A spotlight over the real control rather than a picture of one: a phone is
+       small enough that a screenshot of the app inside the app is unreadable, and a ring around
+       the button they are about to press needs no translating. It is a sibling of everything so
+       it can cover the header as well as the stage. Hidden until it is wanted, and it is a
+       dialog so a screen reader announces it and the focus stays inside it. -->
+  <div class="tut" id="tut" hidden role="dialog" aria-modal="true" aria-labelledby="tutTitle">
+    <div class="tut-ring" id="tutRing" hidden></div>
+    <div class="tut-card" id="tutCard">
+      <p class="tut-step" id="tutStep">1 of 7</p>
+      <h2 class="tut-title" id="tutTitle">Welcome</h2>
+      <p class="tut-body" id="tutBody">…</p>
+      <div class="tut-btns">
+        <button class="tut-btn ghost" id="tutSkip" type="button" title="Close the tutorial — it is in Settings if you want it later">Skip</button>
+        <button class="tut-btn ghost" id="tutBack" type="button" title="The step before this one">Back</button>
+        <button class="tut-btn" id="tutNext" type="button" title="The next step">Next</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Adding a link. Hidden until asked for, because most sessions are picked files. -->
   <div class="linkrow" id="linkRow" hidden>
@@ -387,10 +406,18 @@
     <div class="set">
       <label class="set-lab" for="qualSel">Performance</label>
       <select id="qualSel" title="How hard the visuals work, and what they cost the battery">
+        <option value="auto">Automatic — matches this phone</option>
         <option value="full">Full</option>
         <option value="balanced">Balanced</option>
         <option value="saver">Battery saver</option>
       </select>
+      <p class="set-note" id="autoNote">—</p>
+      <p class="set-note">On <b>Automatic</b> the app starts from what this phone says about
+        itself, then watches its own frame rate while it draws and moves between the three
+        settings below. It steps down within about two seconds of stuttering and back up only
+        after several seconds of running clean, so it settles rather than flickering between
+        two. The line above always says which one is actually running — Automatic never means
+        "Full, probably".</p>
       <p class="set-note">Bursts throw fewer pieces and the background carries fewer as this comes
         down, and Battery saver also redraws the equalizer 24 times a second instead of 60 —
         visibly less fluid on a fast track. Nothing is removed and no effect becomes unavailable.
@@ -414,6 +441,14 @@
       <p class="set-note">Any YouTube links saved by an older version are kept but cannot play.
         This removes those too.</p>
       <button class="sheet-btn danger" id="forgetLinks" title="Remove every saved link" type="button">Forget all saved links</button>
+    </div>
+
+    <div class="set">
+      <span class="set-lab">Tutorial</span>
+      <p class="set-note">A quick walk through the stage, the microphone, your own music and the
+        looks. It runs once by itself the first time; this is how to see it again.</p>
+      <button class="sheet-btn ghost" id="tutAgain" type="button"
+              title="Walk through the app again">Show me around</button>
     </div>
 
     <details class="grp" id="reportGrp">

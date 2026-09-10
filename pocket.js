@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.22.0-beta';
+  const VERSION = '1.24.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -300,9 +300,117 @@
     balanced: { fps: 40, parts: 700,  amb: 250 },
     saver:    { fps: 24, parts: 300,  amb: 120 },
   };
+  // ── Automatic performance ────────────────────────────────────────────────────────────
+  // The three fixed settings assume the person knows which one their phone deserves, and nobody
+  // does — least of all before they have watched it stutter. A cheap Android and a flagship run
+  // the same code here, and the flagship is not the one that needs help.
+  //
+  // So Auto, and it is a real measurement rather than a guess dressed up as one. The device
+  // signals only pick a STARTING tier; after that the app watches its own frame times and moves.
+  //
+  // WHAT STOPS BEING VISIBLE, because this is exactly the kind of change that has to say so:
+  // when Auto steps down, bursts throw fewer pieces and the background carries fewer, and at
+  // Saver the equalizer redraws 24 times a second instead of 60. Nothing is removed and no
+  // effect becomes unavailable. And it is never silent — the menu says which tier is running
+  // right now and the frame rate it measured, so "Auto" can never mean "Full, probably".
+  const TIERS = ['saver', 'balanced', 'full'];
+
+  // A judgement every ~90 frames, about a second and a half.
+  const AUTO_WINDOW = 90;
+  const BAD_MS = 24;     // median frame worse than this is under ~42 a second: step down
+  const GOOD_MS = 19;    // better than this is over ~53 a second: a candidate for stepping up
+  const DOWN_HOLD_MS = 2000;    // down quickly — the person is watching it stutter NOW
+  const UP_HOLD_MS = 10000;     // up slowly, and only after four good windows running
+  const UP_STREAK = 4;
+
+  let autoTier = null, autoFps = 0, autoFrames = [], autoLastAt = 0;
+  let autoChangedAt = 0, autoGoodRun = 0;
+
+  // The starting guess, from what the browser will admit about the hardware. Every one of these
+  // is missing on some browser, so each has a fallback and none of them is trusted alone.
+  function seedTier() {
+    let cores = 0, mem = 0;
+    try { cores = navigator.hardwareConcurrency || 0; } catch (e) {}
+    try { mem = navigator.deviceMemory || 0; } catch (e) {}   // Chrome/Android only
+    // Neither is available: start in the middle rather than assume a fast phone. Being wrong
+    // downward costs some particles; being wrong upward costs a stuttering first impression.
+    if (!cores && !mem) return 'balanced';
+    if ((cores && cores <= 4) || (mem && mem <= 2)) return 'saver';
+    if ((cores && cores <= 6) || (mem && mem <= 4)) return 'balanced';
+    return 'full';
+  }
+
+  const TIER_NAME = { full: 'Full', balanced: 'Balanced', saver: 'Battery saver' };
+
+  // The whole promise of Auto rests on this line: it says which tier is running and the frame
+  // rate that decided it, so the setting can be checked rather than believed.
+  function paintAuto() {
+    const el = $('autoNote');
+    if (!el) return;
+    if (readQualitySetting() !== 'auto') {
+      el.textContent = 'Fixed at ' + TIER_NAME[readQuality()] + '. Nothing adjusts it.';
+      return;
+    }
+    const tier = TIER_NAME[readQuality()];
+    el.textContent = autoFps
+      ? 'Running ' + tier + ' — measured ' + autoFps + ' frames a second.'
+      : 'Starting at ' + tier + '. It will measure and adjust once something is drawing.';
+  }
+
+  function autoNow() {
+    if (!autoTier) autoTier = seedTier();
+    return autoTier;
+  }
+
+  // Called once per pumped frame. Cheap on purpose: a push and, once a window, one sort.
+  function autoSample(now) {
+    if (readQualitySetting() !== 'auto') { autoLastAt = now; return; }
+    if (autoLastAt) {
+      const dt = now - autoLastAt;
+      // A tab coming back from the background reports one enormous frame. That is not the phone
+      // being slow, and treating it as a vote would drop everyone to Saver on every unlock.
+      if (dt > 0 && dt < 400) autoFrames.push(dt);
+    }
+    autoLastAt = now;
+    if (autoFrames.length < AUTO_WINDOW) return;
+    const sorted = autoFrames.slice().sort((a, b) => a - b);
+    const median = sorted[Math.floor(sorted.length / 2)];
+    autoFrames.length = 0;
+    autoFps = median > 0 ? Math.round(1000 / median) : 0;
+    const at = TIERS.indexOf(autoNow());
+    if (median > BAD_MS) {
+      autoGoodRun = 0;
+      if (at > 0 && now - autoChangedAt > DOWN_HOLD_MS) {
+        autoTier = TIERS[at - 1];
+        autoChangedAt = now;
+        applyRenderers();
+        paintAuto();
+      }
+      return;
+    }
+    if (median < GOOD_MS) {
+      autoGoodRun++;
+      if (autoGoodRun >= UP_STREAK && at < TIERS.length - 1 && now - autoChangedAt > UP_HOLD_MS) {
+        autoTier = TIERS[at + 1];
+        autoChangedAt = now;
+        autoGoodRun = 0;
+        applyRenderers();
+        paintAuto();
+      }
+      return;
+    }
+    autoGoodRun = 0;      // in between: hold, and do not creep up on a single lucky window
+  }
+
+  // What the person CHOSE, which may be 'auto'.
+  function readQualitySetting() {
+    try { const v = localStorage.getItem(QUAL_KEY); return (v === 'auto' || QUALITY[v]) ? v : 'auto'; }
+    catch (e) { return 'auto'; }
+  }
+  // What is actually RUNNING. Everything that needs caps asks this one.
   function readQuality() {
-    try { const v = localStorage.getItem(QUAL_KEY); return QUALITY[v] ? v : 'full'; }
-    catch (e) { return 'full'; }
+    const v = readQualitySetting();
+    return v === 'auto' ? autoNow() : v;
   }
   function writeQuality(v) { try { localStorage.setItem(QUAL_KEY, v); } catch (e) {} }
 
@@ -947,6 +1055,7 @@
 
   function pump() {
     if (!pumping) return;
+    autoSample(performance.now());
     const b = readBands();
     if (b) {
       if (eq && eqShown()) eq.push(b);
@@ -1003,7 +1112,7 @@
       // Do not silently jump to another song. Stop, and leave the next press to the person.
       teardown();
       current = -1;
-      $('nowTitle').textContent = queue.length ? 'Nothing loaded' : 'Nothing loaded';
+      $('nowTitle').textContent = 'Nothing loaded';
       $('nowSub').textContent = 'Removed. Pick a track to start again.';
       paintPlay();
     }
@@ -1260,7 +1369,11 @@
     const bits = [];
     if (files) bits.push(files + ' from this device');
     if (links) bits.push(links + ' saved link' + (links === 1 ? '' : 's'));
-    $('libNote').textContent = bits.length ? bits.join(' · ') : 'No music picked yet';
+    // Empty, not "No music picked yet". This app does not need music — the microphone and a
+    // finger both work with an empty queue — so a line announcing an absence described a
+    // problem the person did not have, in the one place on screen that is always visible.
+    // An empty slot says nothing, which is correct, and the version chip beside it stays.
+    $('libNote').textContent = bits.length ? bits.join(' · ') : '';
   }
 
   // ── Settings sheet ───────────────────────────────────────────────────────────────────
@@ -1281,9 +1394,10 @@
     $('sensSel').value = readSens();
     $('punchSel').value = readPunch();
     $('hidePlayer').checked = readHidePlayer();
-    $('qualSel').value = readQuality();
     $('driveSel').value = readDrive();
     $('touchSel').value = readTouch();
+    $('qualSel').value = readQualitySetting();
+    paintAuto();
     $('reportText').value = readReport();
     paintDiag();
     reportSaid('');
@@ -1351,7 +1465,12 @@
     add('equalizer', readEqStyle() + (readEqStyle() === 'random' ? ' (rolled ' + eqShapeNow + ')' : ''));
     add('sensitivity', readSens());
     add('size', readPunch());
-    add('performance', readQuality());
+    add('performance', readQualitySetting()
+      + (readQualitySetting() === 'auto'
+         ? ' (running ' + readQuality() + ', measured ' + (autoFps || '?') + ' fps, seed '
+           + seedTier() + ')' : ''));
+    try { add('cores', navigator.hardwareConcurrency || 'unknown'); } catch (e) {}
+    try { add('memory', (navigator.deviceMemory || 'unknown') + ' GB'); } catch (e) {}
     add('on the stage', visuals);
     add('player hidden', readHidePlayer());
     L.push('');
@@ -1454,6 +1573,126 @@
     }
   }
 
+  // ── The tutorial ─────────────────────────────────────────────────────────────────────
+  // This app opens on a black rectangle and two rows of unlabelled icons, and the two things
+  // that make it worth having — the microphone, and touching the stage — are invisible until
+  // someone tells you. Every earlier attempt to fix that by writing more on the stage made the
+  // stage worse. So: seven steps, once, pointing at the real controls.
+  //
+  // A RING AROUND THE ACTUAL BUTTON rather than a picture of one. A screenshot of the app inside
+  // the app is unreadable at this size, and a ring needs no translating. The position is measured
+  // from the element every step and again on resize or rotation, so it cannot drift.
+  //
+  // The card moves to whichever half of the screen the ring is NOT in, which is the whole reason
+  // the position is computed rather than written down.
+  const TUT_KEY = 'hive-pocket.tutorial';
+  const TUT = [
+    { title: 'This is a visualizer',
+      body: 'It draws whatever it can hear. Music on this phone is one way to feed it, and not '
+          + 'the only one — it works with no music at all. Seven quick steps.' },
+    { at: '#stage', title: 'The stage',
+      body: 'Everything is drawn here. Tap it for full screen, and tap again to come back. '
+          + 'Drag a finger across it and it paints — that works right now, with silence.' },
+    { at: '#micBtn', title: 'Listen to the room', menu: true,
+      body: 'The microphone is the big one. Play music out loud from anything — this phone, a '
+          + 'speaker, a laptop, the radio — press this, and the visuals follow it. It is the only '
+          + 'way to see sound this app cannot read, and nothing you hear is recorded or sent.' },
+    { at: '#pickBtn', title: 'Or your own files',
+      body: 'Choose music from this phone. It asks each time you open the app cold, because a '
+          + 'browser is not allowed to remember a folder between visits.' },
+    { at: '#menuBtn', title: 'Looks',
+      body: 'Settings opens here. Start with Look at the top — one tap sets the bursts, the '
+          + 'colours, the equalizer and the background together. The dropdowns underneath are '
+          + 'there when you want to take one apart.' },
+    { at: '#rollBtn', title: 'Surprise me',
+      body: 'Rolls all of it at once. It is the fastest way to find a combination worth keeping, '
+          + 'and it never picks the two that flash the screen — those you choose by name.' },
+    { title: 'That is everything',
+      body: 'The menu has How it works if you want more, and Report a problem when something '
+          + 'is wrong. Show me around brings this back any time.' },
+  ];
+
+  let tutAt = -1;
+
+  function tutSeen() {
+    try { return localStorage.getItem(TUT_KEY) === VERSION; } catch (e) { return true; }
+  }
+  // Stamped with the VERSION, not a bare 'true': a rewritten tutorial should be able to run
+  // again for someone who saw an older one, without a second key to keep in step.
+  function tutMarkSeen() { try { localStorage.setItem(TUT_KEY, VERSION); } catch (e) {} }
+
+  function tutPlace() {
+    const step = TUT[tutAt];
+    const ring = $('tutRing'), wrap = $('tut');
+    if (!step || !step.at) {
+      ring.hidden = true;
+      wrap.classList.add('plain');
+      wrap.classList.remove('top');
+      return;
+    }
+    const el = document.querySelector(step.at);
+    const r = el && el.getBoundingClientRect();
+    // A target that is not on screen gets the plain card rather than a ring floating over
+    // nothing. THE SECOND HALF OF THIS TEST IS THE ONE THAT MATTERED: a control inside the
+    // scrolled settings sheet has a perfectly good width and height while sitting hundreds of
+    // pixels above the viewport, so the ring was drawn off-screen and the card said "press
+    // this" with nothing highlighted anywhere. Caught by screenshotting every step rather than
+    // by asserting a ring existed — it did exist, just not where anyone could see it.
+    const onScreen = r && r.width && r.height
+      && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
+    if (!onScreen) {
+      ring.hidden = true;
+      wrap.classList.add('plain');
+      wrap.classList.remove('top');
+      return;
+    }
+    wrap.classList.remove('plain');
+    ring.hidden = false;
+    const pad = 6;
+    ring.style.top = (r.top - pad) + 'px';
+    ring.style.left = (r.left - pad) + 'px';
+    ring.style.width = (r.width + pad * 2) + 'px';
+    ring.style.height = (r.height + pad * 2) + 'px';
+    // Card to the opposite half, so it never sits on the thing it is pointing at.
+    const mid = (r.top + r.height / 2) / Math.max(1, innerHeight);
+    wrap.classList.toggle('top', mid > 0.55);
+  }
+
+  function tutShow(i) {
+    tutAt = Math.max(0, Math.min(TUT.length - 1, i));
+    const step = TUT[tutAt];
+    // A step about something in the menu opens the menu, so the ring has something to sit on.
+    if (step.menu) { if ($('sheet').hidden) openSheet(); }
+    else if (!$('sheet').hidden) closeSheet();
+    // ...and scrolls to it, because opening the sheet is not the same as showing the control.
+    if (step.menu && step.at) {
+      const t = document.querySelector(step.at);
+      if (t && t.scrollIntoView) {
+        try { t.scrollIntoView({ block: 'center', behavior: 'auto' }); } catch (e) { t.scrollIntoView(); }
+      }
+    }
+    $('tutStep').textContent = (tutAt + 1) + ' of ' + TUT.length;
+    $('tutTitle').textContent = step.title;
+    $('tutBody').textContent = step.body;
+    $('tutBack').hidden = tutAt === 0;
+    $('tutNext').textContent = tutAt === TUT.length - 1 ? 'Done' : 'Next';
+    $('tut').hidden = false;
+    tutPlace();
+    // Measured again after layout: scrollIntoView moves things, and the first measurement is
+    // taken before the browser has applied it.
+    requestAnimationFrame(() => { if (!$('tut').hidden && tutAt >= 0) tutPlace(); });
+    $('tutNext').focus();
+  }
+
+  function tutStart() { tutShow(0); }
+  function tutEnd() {
+    $('tut').hidden = true;
+    $('tutRing').hidden = true;
+    tutAt = -1;
+    tutMarkSeen();
+    if (!$('sheet').hidden) closeSheet();
+  }
+
   // ── Wiring ───────────────────────────────────────────────────────────────────────────
   $('menuBtn').addEventListener('click', () => ($('sheet').hidden ? openSheet() : closeSheet()));
   $('sheetClose').addEventListener('click', closeSheet);
@@ -1509,8 +1748,14 @@
   });
 
   $('qualSel').addEventListener('change', () => {
-    writeQuality(QUALITY[$('qualSel').value] ? $('qualSel').value : 'full');
+    const v = $('qualSel').value;
+    writeQuality(v === 'auto' || QUALITY[v] ? v : 'auto');
+    // Leaving Auto for a fixed tier, or arriving at it, resets the measurement: the numbers
+    // gathered under the old setting describe a different app.
+    autoFrames.length = 0; autoGoodRun = 0; autoChangedAt = 0;
+    if (v === 'auto') autoTier = seedTier();
     applyRenderers();
+    paintAuto();
   });
 
   $('driveSel').addEventListener('change', () => {
@@ -1525,6 +1770,24 @@
     // person describing a bug usually changes something while describing it.
     paintDiag();
   });
+  $('tutNext').addEventListener('click', () => {
+    if (tutAt >= TUT.length - 1) { tutEnd(); return; }
+    tutShow(tutAt + 1);
+  });
+  $('tutBack').addEventListener('click', () => tutShow(tutAt - 1));
+  $('tutSkip').addEventListener('click', tutEnd);
+  $('tutAgain').addEventListener('click', () => { closeSheet(); tutStart(); });
+  // A rotation or a keyboard appearing moves every target. Measured again rather than trusted.
+  for (const ev of ['resize', 'orientationchange']) {
+    window.addEventListener(ev, () => { if (!$('tut').hidden) tutPlace(); });
+  }
+  document.addEventListener('keydown', (ev) => {
+    if ($('tut').hidden) return;
+    if (ev.key === 'Escape') { ev.preventDefault(); tutEnd(); }
+    else if (ev.key === 'ArrowRight') { ev.preventDefault(); if (tutAt < TUT.length - 1) tutShow(tutAt + 1); }
+    else if (ev.key === 'ArrowLeft') { ev.preventDefault(); if (tutAt > 0) tutShow(tutAt - 1); }
+  });
+
   $('reportSend').addEventListener('click', sendReport);
   $('reportCopy').addEventListener('click', copyReport);
   $('reportGrp').addEventListener('toggle', () => { if ($('reportGrp').open) paintDiag(); });
@@ -1875,6 +2138,19 @@
   paintLib();
   paintModes();
 
+  // First run, once. A frame late on purpose: the ring is measured from real elements, and on a
+  // cold load their boxes are not final until layout has settled — measuring too early puts the
+  // ring in the wrong place on exactly the load that matters most.
+  //
+  // Not shown when the microphone is about to open itself: that path asks for a permission, and
+  // a permission prompt landing under a tutorial card is the worst first second this app could
+  // offer. Those people get it from Show me around instead.
+  if (!tutSeen() && !readMicAuto()) {
+    requestAnimationFrame(() => setTimeout(tutStart, 180));
+  } else if (!tutSeen()) {
+    tutMarkSeen();
+  }
+
   window.__pocket = {
     version: VERSION,
     get links() { return readLinks(); },
@@ -1889,12 +2165,19 @@
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
     get punch() { return { name: readPunch(), value: PUNCH[readPunch()] }; },
     get playerHidden() { return readHidePlayer(); },
-    get quality() { return { name: readQuality(), caps: QUALITY[readQuality()] }; },
+    get quality() {
+      return { chosen: readQualitySetting(), running: readQuality(),
+               caps: QUALITY[readQuality()], fps: autoFps, seed: seedTier() };
+    },
     get drive() { return { name: readDrive(), on: DRIVE[readDrive()] }; },
     get driveAvg() { return { mid: midAvg, high: highAvg }; },
     get touch() { return readTouch(); },
     diagnostics,
     reportBody,
+    get tutorialStep() { return tutAt; },
+    get tutorialSteps() { return TUT.length; },
+    get tutorialSeen() { return tutSeen(); },
+    tutStart, tutEnd,
     get bolts() { return fbolts.length; },
     strike,
     addLink,
