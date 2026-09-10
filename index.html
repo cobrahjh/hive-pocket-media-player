@@ -39,7 +39,7 @@
   CSP is deliberately tight: this app loads nothing from anywhere.
 -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
+      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: https:; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.youtube.com; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="theme-color" content="#131110">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -63,17 +63,17 @@
       <h1>HIVE POCKET</h1>
       <p class="sub"><span class="ver" id="ver">beta</span><span id="libNote">No music picked yet</span></p>
     </div>
-    <button class="icon-btn" id="menuBtn" type="button" aria-label="Settings" aria-expanded="false">
+    <button class="icon-btn" id="menuBtn" title="Settings and help" type="button" aria-label="Settings" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
         <path d="M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z"/>
       </svg>
     </button>
-    <button class="icon-btn" id="linkBtn" type="button" aria-label="Add a link" aria-expanded="false">
+    <button class="icon-btn" id="linkBtn" title="Add a link or a YouTube address" type="button" aria-label="Add a link" aria-expanded="false">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
         <path d="M3.9 12c0-1.71 1.39-3.1 3.1-3.1h4V7H7c-2.76 0-5 2.24-5 5s2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1zM8 13h8v-2H8v2zm9-6h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1s-1.39 3.1-3.1 3.1h-4V17h4c2.76 0 5-2.24 5-5s-2.24-5-5-5z"/>
       </svg>
     </button>
-    <button class="icon-btn" id="pickBtn" type="button" aria-label="Choose music">
+    <button class="icon-btn" id="pickBtn" title="Choose music from this phone" type="button" aria-label="Choose music">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true">
         <path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/>
       </svg>
@@ -83,52 +83,60 @@
   <!-- Adding a link. Hidden until asked for, because most sessions are picked files. -->
   <div class="linkrow" id="linkRow" hidden>
     <input type="url" id="linkInput" inputmode="url" autocomplete="off" spellcheck="false"
-           placeholder="https://example.com/track.mp3" aria-label="Link to an audio file">
-    <button class="linkadd" id="linkAdd" type="button">Add</button>
+           placeholder="An audio file, or a YouTube video or playlist"
+           aria-label="Link to an audio file, or a YouTube video or playlist">
+    <button class="linkadd" id="linkAdd" title="Save this link and add it to the queue" type="button">Add</button>
   </div>
   <p class="linknote" id="linkNote" hidden></p>
 
   <!-- The stage. Effects draw over the equalizer, both from the same analyser.
        A button, not a div with a click handler: it does something, so it has to be reachable
        from a keyboard and announce itself. -->
-  <button class="stage" id="stage" type="button" aria-label="Show the visuals full screen"
-          aria-pressed="false">
-    <canvas id="eqCanvas"></canvas>
-    <canvas id="fxCanvas"></canvas>
-    <span class="stage-hint" id="stageHint">Pick some music and press play — the visuals follow
-      the sound. Tap them for full screen.</span>
-    <span class="stage-tip" id="coverTip" hidden>Tap again to come back</span>
-  </button>
+  <div class="stagewrap" id="stageWrap">
+    <button class="stage" id="stage" title="Tap for full screen" type="button" aria-label="Tap for full screen"
+            aria-pressed="false">
+      <canvas id="eqCanvas"></canvas>
+      <canvas id="fxCanvas"></canvas>
+      <span class="stage-hint" id="stageHint">Pick some music and press play — the visuals follow
+        the sound. Tap them for full screen.</span>
+      <span class="stage-tip" id="coverTip" hidden>Tap again to come back</span>
+    </button>
+    <!-- YouTube's own player, a SIBLING of the stage and not a child: an iframe is interactive
+         content and a <button> may not contain any. It is also why this is the one thing on the
+         page with no equalizer over it — the audio belongs to another origin and cannot be
+         read. The player is shown at full size because YouTube's terms require it. -->
+    <div class="ytstage" id="ytStage" hidden><div id="ytFrame"></div></div>
+  </div>
 
   <section class="now">
     <div class="now-title" id="nowTitle">Nothing loaded</div>
     <div class="now-sub" id="nowSub">Tap the folder button to choose music from this phone</div>
     <div class="scrub">
       <span class="t mono" id="tNow">0:00</span>
-      <input type="range" id="seek" min="0" max="0" step="0.1" value="0" aria-label="Position">
+      <input type="range" id="seek" title="Drag to move through the track" min="0" max="0" step="0.1" value="0" aria-label="Position">
       <span class="t mono" id="tEnd">0:00</span>
     </div>
   </section>
 
   <section class="controls" aria-label="Transport">
-    <button class="ctl" id="shuffleBtn" type="button" aria-pressed="false" aria-label="Shuffle off">
+    <button class="ctl" id="shuffleBtn" title="Shuffle off" type="button" aria-pressed="false" aria-label="Shuffle off">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></svg>
     </button>
-    <button class="ctl" id="prevBtn" type="button" aria-label="Previous">
+    <button class="ctl" id="prevBtn" title="Previous track. Press it early in a track to start it again" type="button" aria-label="Previous">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></svg>
     </button>
-    <button class="ctl play" id="playBtn" type="button" aria-label="Play">
+    <button class="ctl play" id="playBtn" title="Play" type="button" aria-label="Play">
       <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" id="playIcon" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
       <svg viewBox="0 0 24 24" width="30" height="30" fill="currentColor" id="pauseIcon" hidden aria-hidden="true"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>
     </button>
-    <button class="ctl" id="nextBtn" type="button" aria-label="Next">
+    <button class="ctl" id="nextBtn" title="Next track" type="button" aria-label="Next">
       <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></svg>
     </button>
-    <button class="ctl" id="repeatBtn" type="button" aria-pressed="false" aria-label="Repeat off">
+    <button class="ctl" id="repeatBtn" title="Repeat off" type="button" aria-pressed="false" aria-label="Repeat off">
       <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></svg>
       <span class="one" id="repeatOne" hidden>1</span>
     </button>
-    <button class="ctl" id="fxBtn" type="button" aria-pressed="true" aria-label="Effects on">
+    <button class="ctl" id="fxBtn" title="Effects on" type="button" aria-pressed="true" aria-label="Effects on">
       <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor" aria-hidden="true"><path d="M12 2l2.2 6.8H21l-5.5 4 2.1 6.8L12 15.6 6.4 19.6l2.1-6.8L3 8.8h6.8z"/></svg>
     </button>
   </section>
@@ -151,7 +159,7 @@
 
     <div class="set">
       <label class="set-lab" for="visualsSel">What fills the screen</label>
-      <select id="visualsSel">
+      <select id="visualsSel" title="What is drawn on the stage">
         <option value="both">Effects over the equalizer</option>
         <option value="fx">Effects only</option>
         <option value="eq">Equalizer only</option>
@@ -162,7 +170,7 @@
 
     <div class="set">
       <label class="set-lab" for="ambientSel">Background effect</label>
-      <select id="ambientSel">
+      <select id="ambientSel" title="The weather that always draws, behind the beat">
         <option value="off">None</option>
         <option value="stars">Stars</option>
         <option value="snow">Snow</option>
@@ -186,18 +194,39 @@
         flashing effects still flash if you choose one.</p>
     </div>
 
+    <hr class="set-rule">
+
     <div class="set">
       <span class="set-lab">Saved links</span>
       <p class="set-note" id="linkCount">None saved.</p>
-      <button class="sheet-btn danger" id="forgetLinks" type="button">Forget all saved links</button>
+      <p class="set-note">Forgetting them removes YouTube links too.</p>
+      <button class="sheet-btn danger" id="forgetLinks" title="Remove every saved link, including YouTube ones" type="button">Forget all saved links</button>
+    </div>
+
+    <div class="set">
+      <span class="set-lab">How it works</span>
+      <ul class="help">
+        <li><b>Folder button</b> — choose music from this phone. It asks every time you open the
+          app fresh, because a browser cannot remember a folder between sessions.</li>
+        <li><b>Link button</b> — paste an audio address, or a YouTube video or playlist. Saved
+          links come back every time.</li>
+        <li><b>Tap the visuals</b> for full screen. Tap again to come back.</li>
+        <li><b>Star button</b> — effects on or off. It is the same setting as the picker above.</li>
+        <li><b>Previous</b> goes back a track, or starts the current one again if you are more
+          than a few seconds in.</li>
+        <li><b>YouTube</b> plays in its own player, so it needs a connection. It gets no
+          equalizer or effects: that sound comes from another website and this app cannot
+          see it.</li>
+        <li><b>Everything else works offline</b>, including the next time you open the app.</li>
+      </ul>
     </div>
 
     <div class="set">
       <span class="set-lab">About</span>
       <p class="set-note">
         <strong>Hive Pocket Media Player</strong> <span id="aboutVer" class="mono"></span><br>
-        Everything runs on this phone. Your music is never uploaded and the app makes no
-        requests of its own once loaded.
+        Everything runs on this phone and your music is never uploaded. The only thing that
+        reaches out is YouTube, and only while a YouTube track is playing.
       </p>
       <p class="set-note">
         It asks for your music each time it starts cold: a phone will not let a web app
@@ -206,7 +235,7 @@
       </p>
     </div>
 
-    <button class="sheet-btn" id="sheetClose" type="button">Done</button>
+    <button class="sheet-btn" id="sheetClose" type="button" title="Close settings">Done</button>
   </section>
 </div>
 

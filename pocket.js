@@ -18,9 +18,15 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.4.0-beta';
+  const VERSION = '1.5.0-beta';
 
   const $ = (id) => document.getElementById(id);
+  // A control's tooltip and the text a screen reader announces are the same sentence, set in
+  // the same call. Two places to write it is two places for them to drift apart.
+  function label(id, text) {
+    $(id).setAttribute('aria-label', text);
+    $(id).setAttribute('title', text);
+  }
   const fmt = (s) => {
     if (!isFinite(s) || s < 0) s = 0;
     const m = Math.floor(s / 60);
@@ -74,7 +80,42 @@
       return 'That is not a web link. It needs to start with https://';
     } catch (e) { return 'That is not a web link. It needs to start with https://'; }
   }
+  // ── YouTube ──────────────────────────────────────────────────────────────────────────
+  // A YouTube address is not a media file and no <audio> element will ever play one. It needs
+  // YouTube's own player in an iframe, which is why this is the one thing in the app that
+  // reaches the network, the one thing that needs a connection, and the one thing with no
+  // equalizer over it — the sound belongs to another origin and cannot be read from here.
+  //
+  // The ids are matched against a strict character class rather than trusted, because they end
+  // up in the src of a frame. Anything that is not exactly a YouTube id is not a YouTube link.
+  const YT_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
+                    'youtu.be', 'www.youtube-nocookie.com'];
+  const YT_VIDEO = /^[A-Za-z0-9_-]{11}$/;
+  const YT_LIST = /^[A-Za-z0-9_-]{12,42}$/;
+
+  function parseYouTube(u) {
+    let p;
+    try { p = new URL(u); } catch (e) { return null; }
+    if (!YT_HOSTS.includes(p.hostname)) return null;
+    // A list wins over a video: an address carrying both is a video seen from inside a
+    // playlist, and the playlist is what the person copied.
+    const list = p.searchParams.get('list');
+    if (list && YT_LIST.test(list)) return { kind: 'playlist', id: list };
+    let id = p.searchParams.get('v');
+    if (!id) {
+      const seg = p.pathname.split('/').filter(Boolean);
+      // youtu.be/ID, /shorts/ID, /embed/ID, /live/ID
+      if (seg.length === 1 && p.hostname === 'youtu.be') id = seg[0];
+      else if (seg.length === 2 && ['shorts', 'embed', 'live', 'v'].includes(seg[0])) id = seg[1];
+    }
+    return id && YT_VIDEO.test(id) ? { kind: 'video', id } : null;
+  }
+
   function nameFromUrl(u) {
+    const yt = parseYouTube(u);
+    // A real title needs an API call, a key and a quota. The player hands one over for free the
+    // moment it loads, and the row is renamed then; until it does, say which of the two it is.
+    if (yt) return (yt.kind === 'playlist' ? 'YouTube playlist ' : 'YouTube video ') + yt.id;
     try {
       const last = decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || '');
       return (last.replace(/\.[^.]+$/, '') || new URL(u).hostname).slice(0, 200);
@@ -91,6 +132,10 @@
   const VISUALS_KEY = 'hive-pocket.visuals';
   const VISUALS = ['both', 'fx', 'eq'];
   let visuals = 'both';
+  // Which backend owns the sound right now. Everything the transport does has to ask, because
+  // the two have nothing in common: one is an <audio> element this page controls directly, the
+  // other is a player inside somebody else's iframe reached through a script they serve.
+  let ytOn = false;
   const fxShown = () => visuals !== 'eq';
   const eqShown = () => visuals !== 'fx';
   let shuffleOn = false;
@@ -211,17 +256,27 @@
   // `hidden` and not opacity: an invisible canvas is still a canvas being painted every frame,
   // and this runs on a phone battery. The pump below stops feeding whichever one is off, and a
   // renderer re-measures on the way back because it was sized to a box of zero while away.
+  // One place decides what is on the stage, because there are now two reasons for a canvas to
+  // be hidden — the person chose to hide it, or YouTube is using the stage — and two booleans
+  // fighting over the same element is how one of them wins by accident.
+  function paintStage() {
+    $('ytStage').hidden = !ytOn;
+    $('eqCanvas').hidden = ytOn || !eqShown();
+    $('fxCanvas').hidden = ytOn || !fxShown();
+    if (!ytOn) {
+      if (eq && eqShown()) eq.resize();
+      if (fx && fxShown()) fx.resize();
+    }
+  }
+
   function applyVisuals(v) {
     visuals = VISUALS.includes(v) ? v : 'both';
     try { localStorage.setItem(VISUALS_KEY, visuals); } catch (e) { /* private mode */ }
-    $('eqCanvas').hidden = !eqShown();
-    $('fxCanvas').hidden = !fxShown();
-    if (eq && eqShown()) eq.resize();
-    if (fx && fxShown()) fx.resize();
+    paintStage();
     $('visualsSel').value = visuals;
     const on = fxShown();
     $('fxBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
-    $('fxBtn').setAttribute('aria-label', on ? 'Effects on' : 'Effects off');
+    label('fxBtn', on ? 'Effects on' : 'Effects off');
   }
 
   // ── Full screen ──────────────────────────────────────────────────────────────────────
@@ -234,7 +289,7 @@
   let tipTimer = 0;
 
   function nativeOn() {
-    const el = $('stage');
+    const el = $('stageWrap');
     const req = el.requestFullscreen || el.webkitRequestFullscreen;
     if (!req) return;
     try { Promise.resolve(req.call(el)).catch(() => {}); } catch (e) { /* refused */ }
@@ -247,9 +302,11 @@
 
   function setCover(on) {
     covered = on === true;
-    $('stage').classList.toggle('cover', covered);
+    // The WRAPPER, not the stage: YouTube's player is its sibling and has to come along, or
+    // going full screen on a YouTube track would cover the screen with an empty canvas.
+    $('stageWrap').classList.toggle('cover', covered);
     $('stage').setAttribute('aria-pressed', covered ? 'true' : 'false');
-    $('stage').setAttribute('aria-label', covered ? 'Leave full screen' : 'Show the visuals full screen');
+    label('stage', covered ? 'Tap to leave full screen' : 'Tap for full screen');
     // The way back has to be discoverable. It is the same tap, which is not obvious, so say so
     // once and then get out of the way of the thing the person went full screen to look at.
     clearTimeout(tipTimer);
@@ -292,6 +349,7 @@
       del.type = 'button';
       del.className = 'rowdel';
       del.setAttribute('aria-label', 'Remove ' + t.name);
+      del.setAttribute('title', 'Remove ' + t.name);
       del.textContent = '\u00d7';
       // stopPropagation, or removing a row also starts playing whatever slid into its place.
       del.addEventListener('click', (ev) => { ev.stopPropagation(); removeAt(i); });
@@ -315,6 +373,7 @@
     if (i < current) current--;
     else if (wasCurrent) {
       // Do not silently jump to another song. Stop, and leave the next press to the person.
+      if (ytOn) ytStop();
       teardown();
       current = -1;
       $('nowTitle').textContent = queue.length ? 'Nothing loaded' : 'Nothing loaded';
@@ -324,6 +383,118 @@
     if (shuffleOn) buildOrder();
     renderQueue();
     paintLib();
+  }
+
+  // ── YouTube's player ─────────────────────────────────────────────────────────────────
+  let ytPlayer = null;      // the YT.Player, once the script has arrived and built one
+  let ytPlaying = false;    // the player's own idea of whether it is playing
+  let ytTick = 0;           // the progress poll: an iframe fires no timeupdate at this page
+  let ytScript = null;      // the in-flight load, so a second track does not fetch it twice
+
+  const YT_NOTE = 'From YouTube. No equalizer or effects: that sound comes from another site.';
+
+  // Fetches YouTube's player script, once. Rejects rather than hanging if it never arrives,
+  // which is what happens with no connection — and this is the one part of the app that needs
+  // one, so it has to say so instead of sitting on a black rectangle.
+  function ensureYT() {
+    if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
+    if (ytScript) return ytScript;
+    ytScript = new Promise((resolve, reject) => {
+      const done = setTimeout(() => reject(new Error('timeout')), 12000);
+      window.onYouTubeIframeAPIReady = () => { clearTimeout(done); resolve(window.YT); };
+      const s = document.createElement('script');
+      s.src = 'https://www.youtube.com/iframe_api';
+      s.onerror = () => { clearTimeout(done); reject(new Error('blocked')); };
+      document.head.appendChild(s);
+    });
+    // A failed load must not be remembered as in-flight forever; the next track tries again.
+    ytScript.catch(() => { ytScript = null; });
+    return ytScript;
+  }
+
+  function ytStop() {
+    clearInterval(ytTick);
+    ytTick = 0;
+    ytPlaying = false;
+    if (ytPlayer && ytPlayer.stopVideo) { try { ytPlayer.stopVideo(); } catch (e) {} }
+    ytOn = false;
+    paintStage();
+  }
+
+  function ytPoll() {
+    if (!ytPlayer || !ytPlayer.getDuration) return;
+    let d = 0, t = 0;
+    try { d = ytPlayer.getDuration() || 0; t = ytPlayer.getCurrentTime() || 0; } catch (e) { return; }
+    $('tNow').textContent = fmt(t);
+    $('tEnd').textContent = fmt(d);
+    const sk = $('seek');
+    if (document.activeElement !== sk) { sk.max = String(d); sk.value = String(t); }
+    // The player renames the row the moment it knows what it is playing. A playlist renames on
+    // every track, which is the point: the queue says what is actually on.
+    const data = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
+    const t0 = queue[current];
+    if (data && data.title && t0 && t0.yt && t0.name !== data.title) {
+      t0.name = String(data.title).slice(0, 200);
+      renderQueue();
+      $('nowTitle').textContent = t0.name;
+    }
+  }
+
+  function ytState(ev) {
+    // 1 playing, 2 paused, 0 ended. The rest are buffering and cueing, which are not states
+    // the transport has anything to say about.
+    if (ev.data === 1) {
+      ytPlaying = true;
+      ytPoll();                                    // name the row now, not on the next tick
+      if (!ytTick) ytTick = setInterval(ytPoll, 500);
+    }
+    else if (ev.data === 2) ytPlaying = false;
+    else if (ev.data === 0) { ytPlaying = false; next(true); return; }
+    paintPlay();
+  }
+
+  function playYouTube(i, t) {
+    teardown();          // whatever the <audio> element was doing, it is not doing it now
+    current = i;
+    ytOn = true;
+    paintStage();
+    $('nowTitle').textContent = t.name;
+    $('nowSub').textContent = YT_NOTE;
+    $('stageHint').hidden = true;
+    renderQueue();
+    paintPlay();
+
+    ensureYT().then((YT) => {
+      // The queue may have moved on while the script was in the air.
+      if (!ytOn || queue[current] !== t) return;
+      const load = () => {
+        if (t.yt.kind === 'playlist') ytPlayer.loadPlaylist({ list: t.yt.id, listType: 'playlist' });
+        else ytPlayer.loadVideoById(t.yt.id);
+      };
+      if (ytPlayer && ytPlayer.loadVideoById) { load(); return; }
+      ytPlayer = new YT.Player('ytFrame', {
+        // nocookie, and only the controls the player needs: this app is not in the business of
+        // showing anyone related videos.
+        host: 'https://www.youtube-nocookie.com',
+        playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
+        events: {
+          onReady: load,
+          onStateChange: ytState,
+          onError: () => {
+            $('nowSub').textContent = 'YouTube would not play that one. It may be private, '
+              + 'removed, or blocked outside YouTube.';
+            ytPlaying = false;
+            paintPlay();
+          },
+        },
+      });
+    }).catch(() => {
+      ytOn = false;
+      paintStage();
+      $('nowSub').textContent = 'YouTube could not be reached. It needs a connection; '
+        + 'music on this phone does not.';
+      paintPlay();
+    });
   }
 
   // ── Playback ─────────────────────────────────────────────────────────────────────────
@@ -367,6 +538,10 @@
   function play(i, opts) {
     const t = queue[i];
     if (!t) return;
+    if (t.yt) { playYouTube(i, t); return; }
+    // Coming back to ordinary audio: give the stage its canvases back before anything else,
+    // or the equalizer draws behind an iframe nobody can see past.
+    if (ytOn) ytStop();
     const el = ensureAudio();
     teardown();
     current = i;
@@ -405,6 +580,16 @@
   }
 
   function toggle() {
+    // Route on WHAT IS CURRENT, not on the flag. Picking new files sets current to -1 and leaves
+    // YouTube playing, and a toggle that trusted the flag alone answered a press of Play by
+    // pausing YouTube — the newly picked music never started, and the button looked broken.
+    const t = queue[current];
+    if (ytOn && t && t.yt) {
+      if (!ytPlayer) return;                       // still fetching the script
+      try { if (ytPlaying) ytPlayer.pauseVideo(); else ytPlayer.playVideo(); } catch (e) {}
+      return;
+    }
+    if (ytOn) ytStop();                            // the queue has moved off it
     if (!audio || current < 0) { if (queue.length) play(0); return; }
     if (audio.paused) audio.play().then(started).catch(() => {});
     else audio.pause();
@@ -413,6 +598,13 @@
   // of the queue — pressing Next at the last track wrapping is what people expect.
   function next(fromEnd) {
     if (!queue.length) return;
+    // Inside a YouTube playlist, Next means the next video in it — the whole playlist is one
+    // row in this queue, and skipping past it would throw away the rest of what was asked for.
+    // At the end of the playlist the player reports ENDED, which arrives here as fromEnd.
+    if (ytOn && !fromEnd && ytPlayer && queue[current] && queue[current].yt
+        && queue[current].yt.kind === 'playlist') {
+      try { ytPlayer.nextVideo(); return; } catch (e) { /* fall through to the queue */ }
+    }
     if (fromEnd && repeatMode === 'one') { play(current); return; }
     if (shuffleOn) {
       if (!order || order.length !== queue.length) buildOrder();
@@ -434,28 +626,35 @@
   // The queue ran out and nothing says to carry on. Stop where it is rather than looping
   // silently back to the top, which is how a player ends up playing all night.
   function stopHere() {
-    if (audio) audio.pause();
+    if (ytOn && ytPlayer) { try { ytPlayer.pauseVideo(); } catch (e) {} }
+    else if (audio) audio.pause();
     $('nowSub').textContent = 'End of the queue.';
     paintPlay();
   }
   function prev() {
     if (!queue.length) return;
-    if (audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
+    if (ytOn && ytPlayer && queue[current] && queue[current].yt
+        && queue[current].yt.kind === 'playlist') {
+      try { ytPlayer.previousVideo(); return; } catch (e) { /* fall through to the queue */ }
+    }
+    if (!ytOn && audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
     play(current <= 0 ? queue.length - 1 : current - 1);
   }
 
   // ── Painting ─────────────────────────────────────────────────────────────────────────
   function paintPlay() {
-    const playing = !!audio && !audio.paused;
+    const playing = ytOn ? ytPlaying : (!!audio && !audio.paused);
     $('playIcon').hidden = playing;
     $('pauseIcon').hidden = !playing;
-    $('playBtn').setAttribute('aria-label', playing ? 'Pause' : 'Play');
+    label('playBtn', playing ? 'Pause' : 'Play');
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
-    if (!playing) stopPump(); else startPump();
+    // No pump for YouTube: there are no bands to push. The analyser cannot read another
+    // origin's audio, so running the loop would only burn a phone battery drawing nothing.
+    if (!playing || ytOn) stopPump(); else startPump();
   }
 
   function paintTime() {
-    if (!audio) return;
+    if (ytOn || !audio) return;   // the iframe has its own clock, polled in ytPoll()
     const d = isFinite(audio.duration) ? audio.duration : 0;
     $('tNow').textContent = fmt(audio.currentTime);
     $('tEnd').textContent = fmt(d);
@@ -491,7 +690,7 @@
       .map((f) => ({ name: f.name.replace(/\.[^.]+$/, ''), url: URL.createObjectURL(f), file: f }));
     current = -1;
     // Saved links are kept: picking files replaces the FILES, not the library.
-    queue = queue.concat(readLinks().map((l) => ({ name: l.name, url: l.url, link: true })));
+    queue = queue.concat(readLinks().map((l) => ({ name: l.name, url: l.url, link: true, yt: parseYouTube(l.url) })));
     if (shuffleOn) buildOrder();
     renderQueue();
     paintLib();
@@ -513,7 +712,7 @@
     const entry = { name: nameFromUrl(u), url: u };
     links.push(entry);
     writeLinks(links);
-    queue.push({ name: entry.name, url: entry.url, link: true });
+    queue.push({ name: entry.name, url: entry.url, link: true, yt: parseYouTube(entry.url) });
     renderQueue();
     $('linkInput').value = '';
     saveNote('Saved. It will still be here next time you open the app.');
@@ -594,14 +793,18 @@
   $('playBtn').addEventListener('click', toggle);
   $('nextBtn').addEventListener('click', () => next(false));
   $('prevBtn').addEventListener('click', prev);
-  $('seek').addEventListener('input', () => { if (audio) audio.currentTime = Number($('seek').value); });
+  $('seek').addEventListener('input', () => {
+    const v = Number($('seek').value);
+    if (ytOn) { if (ytPlayer && ytPlayer.seekTo) { try { ytPlayer.seekTo(v, true); } catch (e) {} } return; }
+    if (audio) audio.currentTime = v;
+  });
   function paintModes() {
     const s = $('shuffleBtn');
     s.setAttribute('aria-pressed', shuffleOn ? 'true' : 'false');
-    s.setAttribute('aria-label', shuffleOn ? 'Shuffle on' : 'Shuffle off');
+    label('shuffleBtn', shuffleOn ? 'Shuffle on' : 'Shuffle off');
     const r = $('repeatBtn');
     r.setAttribute('aria-pressed', repeatMode !== 'off' ? 'true' : 'false');
-    r.setAttribute('aria-label',
+    label('repeatBtn',
       repeatMode === 'one' ? 'Repeat one track' : repeatMode === 'all' ? 'Repeat the queue' : 'Repeat off');
     $('repeatOne').hidden = repeatMode !== 'one';
   }
@@ -653,7 +856,7 @@
   // Saved links come back on their own; picked files cannot, and the note says which is which.
   readModes();
   applyVisuals(readVisuals());
-  queue = readLinks().map((l) => ({ name: l.name, url: l.url, link: true }));
+  queue = readLinks().map((l) => ({ name: l.name, url: l.url, link: true, yt: parseYouTube(l.url) }));
   if (shuffleOn) buildOrder();
   renderQueue();
   paintLib();
@@ -672,6 +875,8 @@
     get graphReady() { return !!(ctx && analyser && srcNode); },
     get visuals() { return visuals; },
     get covered() { return covered; },
+    get youtube() { return ytOn; },
+    parseYouTube,
     // Read-only counts from the effects renderer. Storm and lightning draw bolts as an event
     // subsystem separate from the weather particles, so 'is lightning actually striking' cannot
     // be answered from the config — only from here.

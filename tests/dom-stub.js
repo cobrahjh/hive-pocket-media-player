@@ -20,6 +20,10 @@ const vm = require('vm');
 
 const noop = () => {};
 
+class SandboxURL extends URL {}
+SandboxURL.createObjectURL = () => 'blob:stub/1';
+SandboxURL.revokeObjectURL = noop;
+
 /** Dispatch to the listeners the app registered for `type`. */
 function fire(target, type, ev) {
   const list = (target.handlers && target.handlers[type]) || [];
@@ -80,6 +84,8 @@ function el(id) {
  *   opts.refuseFullscreen  the API exists and rejects, which is what a browser does when it
  *                       does not believe a gesture happened
  *   opts.reducedMotion  what matchMedia reports
+ *   opts.youtube        'ok' (default) the player script arrives and works, 'blocked' it fails
+ *                       to load the way it does with no connection
  */
 function boot(opts) {
   const o = opts || {};
@@ -103,6 +109,37 @@ function boot(opts) {
   media.pause = () => { media.paused = true; };
   media.load = () => { media.paused = true; media.currentTime = 0; };
 
+  // A stand-in for YouTube's player. It records what it was asked to load and lets a test drive
+  // the state changes the real one fires, because those are what the transport reacts to.
+  const yt = { scripts: 0, players: 0, player: null, loaded: [], calls: [] };
+  function FakePlayer(mount, opts) {
+    yt.players++;
+    const ev = (opts && opts.events) || {};
+    const self = {
+      mount,
+      opts,
+      state: -1,
+      loadVideoById(id) { yt.loaded.push({ kind: 'video', id }); self.fire(1); },
+      loadPlaylist(o) { yt.loaded.push({ kind: 'playlist', id: o.list }); self.fire(1); },
+      playVideo() { yt.calls.push('play'); self.fire(1); },
+      pauseVideo() { yt.calls.push('pause'); self.fire(2); },
+      stopVideo() { yt.calls.push('stop'); },
+      nextVideo() { yt.calls.push('next'); },
+      previousVideo() { yt.calls.push('previous'); },
+      seekTo(t) { yt.calls.push('seek:' + t); },
+      getDuration: () => 210,
+      getCurrentTime: () => 12,
+      getPlayerState: () => self.state,
+      getVideoData: () => ({ title: 'A Song From YouTube' }),
+      fire(state) { self.state = state; if (ev.onStateChange) ev.onStateChange({ data: state }); },
+      error() { if (ev.onError) ev.onError({ data: 150 }); },
+    };
+    yt.player = self;
+    // The real player calls onReady once the iframe is up, never synchronously.
+    setTimeout(() => { if (ev.onReady) ev.onReady(); }, 0);
+    return self;
+  }
+
   const fullscreen = { element: null, requests: 0, exits: 0 };
   const store = new Map();
   const docHandlers = {};
@@ -116,6 +153,20 @@ function boot(opts) {
     },
     handlers: docHandlers,
     addEventListener(t, fn) { (docHandlers[t] = docHandlers[t] || []).push(fn); },
+    // Appending YouTube's script is a network fetch. Either it arrives and announces itself the
+    // way the real one does, or it fails — which is the case with no connection, and the one
+    // most likely to be handled badly.
+    head: {
+      appendChild(node) {
+        yt.scripts++;
+        setTimeout(() => {
+          if (o.youtube === 'blocked') { if (node.onerror) node.onerror(); return; }
+          sandbox.YT = { Player: FakePlayer };
+          if (typeof sandbox.onYouTubeIframeAPIReady === 'function') sandbox.onYouTubeIframeAPIReady();
+        }, 0);
+        return node;
+      },
+    },
     querySelectorAll: () => [],
     hidden: false,
     get fullscreenElement() { return fullscreen.element; },
@@ -127,7 +178,7 @@ function boot(opts) {
     },
   };
 
-  const stage = get('stage');
+  const stage = get('stageWrap');
   if (!o.noFullscreen) {
     stage.requestFullscreen = () => {
       fullscreen.requests++;
@@ -143,7 +194,10 @@ function boot(opts) {
     setTimeout, clearTimeout, setInterval, clearInterval,
     Promise, Math, JSON, Date, String, Number, Array, Object, Boolean, Error,
     Uint8Array, Set, Map, isFinite, parseInt, parseFloat,
-    URL: { createObjectURL: () => 'blob:stub/1', revokeObjectURL: noop },
+    // The REAL URL class with the two blob helpers hung off it. It was a bare object once, and
+    // every `new URL(...)` inside the app threw — which the app catches and reads as "not a
+    // link", so link parsing silently failed and no suite noticed, because none added a link.
+    URL: SandboxURL,
     performance: { now: () => Date.now() },
     // A plain http origin, so worker registration is skipped — the worker is not what these
     // suites are about, and registering one would need a second set of stubs.
@@ -193,6 +247,7 @@ function boot(opts) {
     els: get,
     media,
     fullscreen,
+    yt,
     resizes,
     store,
     pocket: sandbox.window.__pocket,
@@ -221,7 +276,11 @@ function makeCheck() {
   };
   state.report = function () {
     console.log('\n' + state.pass + ' passed, ' + state.fails.length + ' failed\n');
-    if (state.fails.length) { state.fails.forEach((f) => console.log('  ' + f)); process.exit(1); }
+    if (state.fails.length) state.fails.forEach((f) => console.log('  ' + f));
+    // EXIT, do not fall off the end. The app sets a repeating timer while YouTube plays, and an
+    // open interval keeps Node alive forever — a suite that has printed its result and then
+    // hangs looks exactly like a suite stuck in a loop.
+    process.exit(state.fails.length ? 1 : 0);
   };
   return state;
 }

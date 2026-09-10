@@ -28,7 +28,9 @@ const HTML = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
 const t = makeCheck();
 const check = t.check;
 
-const covered = (app) => app.els('stage').classList.contains('cover');
+// The WRAPPER carries the class, because YouTube's player is a sibling of the stage and has to
+// go full screen with it.
+const covered = (app) => app.els('stageWrap').classList.contains('cover');
 const shown = (app) => ({ eq: !app.els('eqCanvas').hidden, fx: !app.els('fxCanvas').hidden });
 
 /** Get an app to the point where the renderers exist, so the canvases are being managed. */
@@ -45,7 +47,7 @@ async function playing(opts) {
   console.log('\nvisuals and full screen\n');
 
   // ── 1. the picker in the markup matches the values the app accepts ───────────────────────
-  const selBody = (HTML.match(/<select id="visualsSel">([\s\S]*?)<\/select>/) || [, ''])[1];
+  const selBody = (HTML.match(/<select id="visualsSel"[^>]*>([\s\S]*?)<\/select>/) || [, ''])[1];
   const htmlList = [...selBody.matchAll(/<option value="([^"]+)">/g)].map((m) => m[1]);
   const codeList = (SRC.match(/const VISUALS = \[([^\]]*)\]/) || [, ''])[1]
     .match(/'[^']+'/g).map((s) => s.slice(1, -1));
@@ -53,6 +55,14 @@ async function playing(opts) {
   check('markup and code agree on the values',
     JSON.stringify(htmlList) === JSON.stringify(codeList),
     'html=' + htmlList.join(',') + ' code=' + codeList.join(','));
+
+  // ── 1b. every control says what it does ──────────────────────────────────────────────────
+  // A tooltip is the only explanation most controls in this app ever get: they are icons. A new
+  // one added without a title is a button nobody can identify, and that is invisible in review.
+  const controls = [...HTML.matchAll(/<(button|select)([^>]*id="([^"]+)"[^>]*)>/g)];
+  const untitled = controls.filter((m) => !/title="/.test(m[2])).map((m) => m[3]);
+  check('every button and picker has a tooltip', untitled.length === 0, untitled.join(', '));
+  check('there were controls to check', controls.length >= 10, String(controls.length));
 
   // ── 2. each choice puts the right thing on screen ────────────────────────────────────────
   const app = await playing();
@@ -139,7 +149,7 @@ async function playing(opts) {
   // ── 8. this suite must be able to fail ───────────────────────────────────────────────────
   // Cut the class out of setCover and require case 5 to collapse. If the checks above passed
   // against a build that never covers anything, they were measuring the stub, not the app.
-  const brokenSrc = SRC.replace("$('stage').classList.toggle('cover', covered);", '');
+  const brokenSrc = SRC.replace("$('stageWrap').classList.toggle('cover', covered);", '');
   check('the mutation applied', brokenSrc !== SRC);
   const broken = await playing({ src: brokenSrc, refuseFullscreen: true });
   fire(broken.els('stage'), 'click');

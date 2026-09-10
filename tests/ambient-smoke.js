@@ -104,7 +104,7 @@ const appList = listMatch ? listMatch[1].match(/'[^']+'/g).map((s) => s.slice(1,
 // Scoped to the ambient <select>, not every option on the page — the Settings sheet has more
 // than one picker now, and a page-wide scan silently folded the other one's values in here.
 const html = read('index.html');
-const selBody = (html.match(/<select id="ambientSel">([\s\S]*?)<\/select>/) || [, ''])[1];
+const selBody = (html.match(/<select id="ambientSel"[^>]*>([\s\S]*?)<\/select>/) || [, ''])[1];
 const htmlList = [...selBody.matchAll(/<option value="([^"]+)">/g)].map((m) => m[1]);
 
 check('the app offers a list at all', appList.length > 1, appList.length + ' entries');
