@@ -158,6 +158,20 @@
     <h2 id="sheetTitle">Settings</h2>
 
     <div class="set">
+      <span class="set-lab">Microphone</span>
+      <button class="sheet-btn" id="micBtn" type="button" aria-pressed="false"
+              title="Draw the visuals from what this phone can hear">Listen with the microphone</button>
+      <p class="set-note" id="micNote">Not listening.</p>
+      <label class="mic-auto" for="micAuto">
+        <input type="checkbox" id="micAuto">
+        <span>Start listening when the app opens<small>Comes back on its own next time, with no tap. Only the microphone can do this.</small></span>
+      </label>
+      <p class="set-note">The one source that can see sound this app does not own — another app's
+        music, a speaker in the room, a stream. Nothing is recorded and nothing leaves the phone;
+        the sound is measured and drawn, never saved and never sent.</p>
+    </div>
+
+    <div class="set">
       <label class="set-lab" for="visualsSel">What fills the screen</label>
       <select id="visualsSel" title="What is drawn on the stage">
         <option value="both">Effects over the equalizer</option>
@@ -206,6 +220,9 @@
     <div class="set">
       <span class="set-lab">How it works</span>
       <ul class="help">
+        <li><b>Microphone</b> — in this menu. It draws from whatever the phone can hear, which
+          is the only way to get visuals from music this app cannot read, YouTube included. Play
+          it out loud and the bars and bursts follow it.</li>
         <li><b>Folder button</b> — choose music from this phone. It asks every time you open the
           app fresh, because a browser cannot remember a folder between sessions.</li>
         <li><b>Link button</b> — paste an audio address, or a YouTube video or playlist. Saved

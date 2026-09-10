@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.5.0-beta';
+  const VERSION = '1.6.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -189,16 +189,23 @@
   // second call — and because an AudioContext started before a user gesture is born suspended.
   let ctx = null, analyser = null, srcNode = null, freq = null;
 
+  // The context, the element analyser and the shared band buffer. Split out of ensureGraph
+  // because the microphone can now be the first thing this app ever opens: there may be no
+  // track, no <audio> element and no play yet, and the graph still has to exist.
+  function ensureCtx() {
+    if (ctx) return true;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;                         // no Web Audio: still plays, just no visuals
+    ctx = new AC();
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 1024;                       // 512 bins, plenty for 64 bands
+    analyser.smoothingTimeConstant = 0.75;
+    freq = new Uint8Array(analyser.frequencyBinCount);
+    return true;
+  }
+
   function ensureGraph(el) {
-    if (!ctx) {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      if (!AC) return false;                       // no Web Audio: still plays, just no visuals
-      ctx = new AC();
-      analyser = ctx.createAnalyser();
-      analyser.fftSize = 1024;                     // 512 bins, plenty for 64 bands
-      analyser.smoothingTimeConstant = 0.75;
-      freq = new Uint8Array(analyser.frequencyBinCount);
-    }
+    if (!ensureCtx()) return false;
     if (!srcNode) {
       srcNode = ctx.createMediaElementSource(el);
       srcNode.connect(analyser);
@@ -206,6 +213,143 @@
     }
     if (ctx.state === 'suspended') ctx.resume().catch(() => {});
     return true;
+  }
+
+  // ── The microphone ──────────────────────────────────────────────────────
+  // Why this exists: everything else in this app can only see audio it owns. A file it plays,
+  // yes; a YouTube video or a link from a host that will not grant permission, no — those come
+  // back as silence and the visuals sit dead. The microphone is the one source that can see
+  // ANY sound in the room, including music playing from another app entirely.
+  //
+  // ITS ANALYSER IS NEVER CONNECTED TO destination. The element path must be
+  // (analyser -> destination is how the file reaches the speakers), and sending a microphone
+  // down that same line on a phone — speaker centimetres from the mic — is a feedback howl.
+  // Two analysers rather than one, so that line can never be shared by accident.
+  const MIC_KEY = 'hive-pocket.mic';
+  let micAnalyser = null, micSrc = null, micStream = null, micLive = false, micArmed = false;
+
+  function readMicAuto() {
+    try { return JSON.parse(localStorage.getItem(MIC_KEY) || '{}').auto === true; }
+    catch (e) { return false; }
+  }
+  function writeMicAuto(on) {
+    try { localStorage.setItem(MIC_KEY, JSON.stringify({ auto: on === true })); }
+    catch (e) { /* private mode */ }
+  }
+
+  function micNote(msg) { const el = $('micNote'); if (el) el.textContent = msg; }
+
+  function micPaint() {
+    const b = $('micBtn');
+    if (b) {
+      b.textContent = micLive ? 'Stop listening' : 'Listen with the microphone';
+      b.setAttribute('aria-pressed', micLive ? 'true' : 'false');
+    }
+    const c = $('micAuto');
+    if (c) c.checked = readMicAuto();
+    // Say it on the main screen too. A microphone that is open and unmentioned is the kind of
+    // thing that should never be a surprise, and with no track loaded there is nothing else here.
+    if (current < 0) {
+      $('nowTitle').textContent = micLive ? 'Listening' : 'Nothing loaded';
+      $('nowSub').textContent = micLive
+        ? 'The visuals follow whatever this phone can hear.'
+        : 'Tap the folder button to choose music from this phone';
+    }
+    $('stageHint').hidden = micLive || current >= 0;
+  }
+
+  async function micStart(fromGesture) {
+    if (micLive) return true;
+    // isSecureContext, not a protocol string. The browser is the authority on what counts —
+    // it trusts 127.0.0.1 and localhost as well as https, and a hand-rolled check got that
+    // wrong and refused to open on a local test server.
+    if (!window.isSecureContext) {
+      micNote('A microphone needs a secure address. This page is not on one.');
+      return false;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      micNote('This browser will not open a microphone.');
+      return false;
+    }
+    if (!ensureCtx()) { micNote('This browser has no Web Audio, so there is nothing to draw.'); return false; }
+    try {
+      // All three off, deliberately. They default ON because the default caller is a phone call,
+      // and every one of them is wrong here: autoGainControl rides the level and flattens exactly
+      // the dynamics the visuals exist to show, noiseSuppression is trained on speech and treats
+      // sustained music as noise, and echoCancellation subtracts what the speakers are playing —
+      // which, when the phone is listening to a speaker, is the whole signal.
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        video: false,
+      });
+    } catch (e) {
+      micStream = null;
+      const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      micNote(denied
+        ? 'The microphone was refused. Allow it for this site and try again.'
+        : 'No microphone opened: ' + ((e && e.name) || 'unknown error') + '.');
+      micPaint();
+      return false;
+    }
+    if (!micAnalyser) {
+      micAnalyser = ctx.createAnalyser();
+      micAnalyser.fftSize = 1024;
+      micAnalyser.smoothingTimeConstant = 0.75;
+    }
+    micSrc = ctx.createMediaStreamSource(micStream);
+    micSrc.connect(micAnalyser);          // and NOWHERE else. See the note above.
+    micLive = true;
+    // Listening to the room while this app plays its own file would draw both at once, one of
+    // them through a speaker. Pause rather than tear down, so play still resumes where it was.
+    if (audio && !audio.paused) { try { audio.pause(); } catch (e) {} }
+    if (ytOn) ytStop();
+    paintPlay();
+    initVisuals();
+    startPump();
+    // A context created without a gesture is born suspended, and resume() may be refused until
+    // the page is touched. Say so rather than drawing a flat line and looking broken.
+    if (ctx.state === 'suspended') {
+      try { await ctx.resume(); } catch (e) { /* refused */ }
+    }
+    if (ctx.state === 'suspended') {
+      micNote('Listening — tap the screen once to let the phone start drawing.');
+      armResume();
+    } else {
+      micNote(fromGesture === false
+        ? 'Listening. Started by itself, because you asked it to.'
+        : 'Listening.');
+    }
+    micPaint();
+    return true;
+  }
+
+  // One tap, once, anywhere. Only armed when a context is stuck suspended.
+  function armResume() {
+    if (micArmed) return;
+    micArmed = true;
+    const go = () => {
+      document.removeEventListener('pointerdown', go, true);
+      micArmed = false;
+      if (!ctx) return;
+      ctx.resume().then(() => { if (micLive) micNote('Listening.'); }).catch(() => {});
+    };
+    document.addEventListener('pointerdown', go, true);
+  }
+
+  function micStop() {
+    if (!micLive) return;
+    micLive = false;
+    try { if (micSrc) micSrc.disconnect(); } catch (e) {}
+    micSrc = null;
+    // Stop the TRACKS, not just the node: the phone keeps its recording indicator lit and holds
+    // the device open until every track is stopped.
+    if (micStream) {
+      try { micStream.getTracks().forEach((t) => t.stop()); } catch (e) {}
+      micStream = null;
+    }
+    if (current < 0) stopPump();
+    micNote('Not listening.');
+    micPaint();
   }
 
   // ── Bands ────────────────────────────────────────────────────────────────────────────
@@ -219,8 +363,11 @@
   })();
 
   function readBands() {
-    if (!analyser) return null;
-    analyser.getByteFrequencyData(freq);
+    // The microphone wins while it is open: it is the source the person deliberately chose, and
+    // the element analyser may still be holding the last frame of a paused track.
+    const an = micLive && micAnalyser ? micAnalyser : analyser;
+    if (!an || !freq) return null;
+    an.getByteFrequencyData(freq);
     const n = freq.length;
     const bands = new Array(BANDS);
     for (let i = 0; i < BANDS; i++) {
@@ -780,6 +927,14 @@
     renderQueue(); paintLib(); paintSheet();
   });
 
+  $('micBtn').addEventListener('click', () => { if (micLive) micStop(); else micStart(true); });
+  $('micAuto').addEventListener('change', () => {
+    writeMicAuto($('micAuto').checked);
+    // Ticking it is also a decision to listen NOW — otherwise the setting appears to do nothing
+    // until the next cold start, which reads as broken.
+    if ($('micAuto').checked && !micLive) micStart(true);
+  });
+
   $('pickBtn').addEventListener('click', () => $('filePick').click());
   $('linkBtn').addEventListener('click', () => {
     const row = $('linkRow');
@@ -855,6 +1010,15 @@
 
   // Saved links come back on their own; picked files cannot, and the note says which is which.
   readModes();
+  micPaint();
+  micNote('Not listening.');
+  // Remembered microphone, reopened without a tap. This works — and ONLY works — because
+  // getUserMedia needs no gesture once permission has been granted for this origin. It is a
+  // promise that could not be kept for system audio, which is refused without a fresh tap
+  // every time, so nothing here offers that.
+  if (readMicAuto()) {
+    setTimeout(() => { micStart(false); }, 0);
+  }
   applyVisuals(readVisuals());
   queue = readLinks().map((l) => ({ name: l.name, url: l.url, link: true, yt: parseYouTube(l.url) }));
   if (shuffleOn) buildOrder();
@@ -873,6 +1037,13 @@
     get current() { return current; },
     get bands() { return readBands(); },
     get graphReady() { return !!(ctx && analyser && srcNode); },
+    get micLive() { return micLive; },
+    get micAuto() { return readMicAuto(); },
+    // Reports only that the microphone has an analyser of its own. The guarantee that it never
+    // reaches the speakers is STRUCTURAL — nothing is ever connected downstream of it — and no
+    // getter can prove that from here; read the three connect() calls in this file instead.
+    get micIsolated() { return !!(micAnalyser && micAnalyser !== analyser); },
+    micStart, micStop,
     get visuals() { return visuals; },
     get covered() { return covered; },
     get youtube() { return ytOn; },

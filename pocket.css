@@ -285,3 +285,13 @@ html, body {
 
 :focus-visible { outline: 2px solid var(--hive); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+/* The microphone's auto-start row. Same shape as the sheet's other explained controls: the
+   checkbox is a real 20px target and the reason sits under the label rather than beside it. */
+.mic-auto {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 0.6rem 0 0.2rem; font-size: 0.85rem; cursor: pointer;
+}
+.mic-auto input { width: 20px; height: 20px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--hive); }
+.mic-auto small { display: block; margin-top: 3px; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
+#micBtn[aria-pressed="true"] { border-color: var(--hive); color: var(--hive); }
