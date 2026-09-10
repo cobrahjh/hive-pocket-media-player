@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.15.0-beta';
+  const VERSION = '1.16.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -311,6 +311,42 @@
   }
   function writeQuality(v) { try { localStorage.setItem(QUAL_KEY, v); } catch (e) {} }
 
+  // How big a burst is. beat.intensity already scaled every burst; it was simply never offered.
+  // At Huge with Performance on Battery saver the particle budget clips the result — the cap is
+  // the cap, and it is doing its job rather than failing.
+  const PUNCH_KEY = 'hive-pocket.punch';
+  const PUNCH = { subtle: 0.8, normal: 1.2, bold: 1.8, huge: 2.6 };
+  function readPunch() {
+    try { const v = localStorage.getItem(PUNCH_KEY); return PUNCH[v] ? v : 'normal'; }
+    catch (e) { return 'normal'; }
+  }
+  function writePunch(v) { try { localStorage.setItem(PUNCH_KEY, v); } catch (e) {} }
+
+  // FOUNTAIN, retuned. Its defaults make it the weakest of the six and the numbers say why, read
+  // against its siblings: spread 0.55 is the narrowest of them all (every other effect is 1 or
+  // more), gravity 520 the heaviest (confetti 420, hearts 280, fireworks 260), size 2.4 among the
+  // smallest and glow 0.9 below fireworks. Narrow, heavy, small and dim: the particles leave the
+  // nozzle and are pulled straight back before they can read as anything.
+  //
+  // The point is to keep it a FOUNTAIN and not turn it into fireworks. It stays the narrowest
+  // effect and the second-heaviest, because rising in a column and falling back is the whole
+  // idea; it just gets the room to do it. Wider by half, a third less gravity, half again the
+  // life to see the arc, half again the particles because a jet should look continuous, and
+  // enough size and glow to be visible on a phone in a lit room.
+  //
+  // Applied from here rather than by editing the renderer: fx-render.js is shared with the stream
+  // overlays, and this is Pocket's opinion about one effect, not a fix to the renderer. The merge
+  // is per named effect, so the other five keep their own defaults untouched.
+  const FOUNTAIN = {
+    count: 140,      // was 90 — a jet should look continuous
+    spread: 0.85,    // was 0.55 — still the narrowest of the six
+    gravity: 360,    // was 520 — still the second heaviest, so it still falls back
+    life: 2.6,       // was 1.8 — long enough to watch the arc up and down
+    size: 3.0,       // was 2.4
+    glow: 1.15,      // was 0.9
+    wander: 0.6,     // was 0.4 — a little life across the plume
+  };
+
   // Hiding the player, not removing it. With the microphone able to see sound this app does not
   // own, the visuals stand on their own and the transport is often just something in the way.
   // Everything stays wired: turn this off and the queue, the saved links and the controls are
@@ -379,7 +415,12 @@
       palette: readPalette(),
       particleCap: q.parts,
       ambientCap: q.amb,
-      beat: { effect: readBeatEffect(), sensitivity: SENS[readSens()] },
+      effects: { fountain: FOUNTAIN },
+      beat: {
+        effect: readBeatEffect(),
+        sensitivity: SENS[readSens()],
+        intensity: PUNCH[readPunch()],
+      },
     });
   }
   function readModes() {
@@ -1147,6 +1188,7 @@
     $('ambientSel').value = readAmbient();
     $('beatSel').value = readBeatEffect();
     $('sensSel').value = readSens();
+    $('punchSel').value = readPunch();
     $('hidePlayer').checked = readHidePlayer();
     $('qualSel').value = readQuality();
     $('palSel').value = readPalette();
@@ -1218,6 +1260,11 @@
   $('palSel').addEventListener('change', () => {
     writePalette(PALETTES.includes($('palSel').value) ? $('palSel').value : 'hive');
     applyRenderers(); paintLook();
+  });
+
+  $('punchSel').addEventListener('change', () => {
+    writePunch(PUNCH[$('punchSel').value] ? $('punchSel').value : 'normal');
+    applyRenderers();
   });
 
   $('qualSel').addEventListener('change', () => {
@@ -1353,6 +1400,7 @@
     get look() { return currentLook(); },
     get beatEffect() { return readBeatEffect(); },
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
+    get punch() { return { name: readPunch(), value: PUNCH[readPunch()] }; },
     get playerHidden() { return readHidePlayer(); },
     get quality() { return { name: readQuality(), caps: QUALITY[readQuality()] }; },
     addLink,
@@ -1378,5 +1426,14 @@
     // be answered from the config — only from here.
     get fxStats() { return fx ? fx.stats() : null; },
     get fxAmbient() { return fx ? fx.getAmbientMode() : null; },
+    // What the effects renderer is actually holding. The particle count cannot answer "did that
+    // setting arrive" once the budget is saturated — every size looks like 1200 — so the config
+    // itself is the only honest check.
+    get fxConfig() {
+      if (!fx || !fx.getConfig) return null;
+      const c = fx.getConfig();
+      return { intensity: c.beat.intensity, effect: c.beat.effect, fountain: c.effects.fountain,
+               hearts: c.effects.hearts, particleCap: c.particleCap };
+    },
   };
 })();

@@ -241,6 +241,18 @@
       </div>
 
       <div class="set">
+        <label class="set-lab" for="punchSel">Size</label>
+        <select id="punchSel" title="How big a burst is when it lands">
+          <option value="subtle">Subtle</option>
+          <option value="normal">Normal</option>
+          <option value="bold">Bold</option>
+          <option value="huge">Huge</option>
+        </select>
+        <p class="set-note">Scales every burst. On Battery saver the particle budget will clip the
+          biggest ones — that is the cap doing its job, not the setting failing.</p>
+      </div>
+
+      <div class="set">
         <label class="set-lab" for="sensSel">Sensitivity</label>
         <select id="sensSel" title="How far above the running average a moment has to be to count as a hit">
           <option value="easy">Easy — for a microphone in a room</option>
