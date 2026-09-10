@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.7.1-beta';
+  const VERSION = '1.8.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -196,6 +196,55 @@
   }
   function writeSens(v) { try { localStorage.setItem(SENS_KEY, v); } catch (e) {} }
 
+  // Hiding the player, not removing it. With the microphone able to see sound this app does not
+  // own, the visuals stand on their own and the transport is often just something in the way.
+  // Everything stays wired: turn this off and the queue, the saved links and the controls are
+  // exactly where they were.
+  const HIDE_KEY = 'hive-pocket.hideplayer';
+  function readHidePlayer() {
+    try { return localStorage.getItem(HIDE_KEY) === '1'; } catch (e) { return false; }
+  }
+  function writeHidePlayer(on) {
+    try { localStorage.setItem(HIDE_KEY, on ? '1' : '0'); } catch (e) {}
+  }
+
+  // The parts that ARE the player. The stage, the menu button and the version chip are not in
+  // this list on purpose: hiding the menu would strand you with no way back.
+  const PLAYER_PARTS = ['#linkBtn', '#pickBtn', '#linkRow', '.now', '.controls', '.queue-wrap'];
+
+  function applyHidePlayer() {
+    const off = readHidePlayer();
+    for (const sel of PLAYER_PARTS) {
+      const el = document.querySelector(sel);
+      if (!el) continue;
+      // The link row has its own hidden state and must not be forced open when the player
+      // comes back — it is a disclosure, closed by default.
+      if (sel === '#linkRow') { if (off) el.hidden = true; continue; }
+      el.hidden = off;
+    }
+    // Nothing on screen could stop a playing track once the transport is gone, so it stops here
+    // rather than playing on out of reach. The lock screen would still have held controls, but
+    // "I hid the player and the music kept going" is not a thing to leave to chance.
+    if (off) {
+      if (audio && !audio.paused) { try { audio.pause(); } catch (e) {} }
+      if (ytOn) ytStop();
+      paintPlay();
+    }
+    paintStageHint();
+  }
+
+  // One place decides what the empty stage says, because three different states can leave it
+  // empty and each needs a different sentence.
+  function paintStageHint() {
+    const el = $('stageHint');
+    if (!el) return;
+    if (micLive || current >= 0) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = readHidePlayer()
+      ? 'Turn on the microphone in the menu — the visuals follow whatever this phone can hear.'
+      : 'Pick some music and press play — the visuals follow the sound. Tap them for full screen.';
+  }
+
   // ONE place that talks to the renderer's config, because setConfig REPLACES it: it merges what
   // you pass over the defaults, so a call carrying only `ambient` silently resets the burst
   // effect, and a call carrying only `beat` silently resets the weather. Every setting this app
@@ -310,7 +359,7 @@
         ? 'The visuals follow whatever this phone can hear.'
         : 'Tap the folder button to choose music from this phone';
     }
-    $('stageHint').hidden = micLive || current >= 0;
+    paintStageHint();
   }
 
   async function micStart(fromGesture) {
@@ -989,6 +1038,7 @@
     $('ambientSel').value = readAmbient();
     $('beatSel').value = readBeatEffect();
     $('sensSel').value = readSens();
+    $('hidePlayer').checked = readHidePlayer();
     $('visualsSel').value = visuals;
     $('motionNote').hidden = !reducedMotion();
     const n = readLinks().length;
@@ -1032,6 +1082,11 @@
     queue = queue.filter((t) => !t.link);
     if (current >= queue.length) { teardown(); current = -1; paintPlay(); }
     renderQueue(); paintLib(); paintSheet();
+  });
+
+  $('hidePlayer').addEventListener('change', () => {
+    writeHidePlayer($('hidePlayer').checked);
+    applyHidePlayer();
   });
 
   $('sensSel').addEventListener('change', () => {
@@ -1130,6 +1185,7 @@
   readModes();
   micPaint();
   micNote('Not listening.');
+  applyHidePlayer();
   // Remembered microphone, reopened without a tap. This works — and ONLY works — because
   // getUserMedia needs no gesture once permission has been granted for this origin. It is a
   // promise that could not be kept for system audio, which is refused without a fresh tap
@@ -1151,6 +1207,7 @@
     get ambient() { return readAmbient(); },
     get beatEffect() { return readBeatEffect(); },
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
+    get playerHidden() { return readHidePlayer(); },
     addLink,
     removeAt,
     get queue() { return queue; },
