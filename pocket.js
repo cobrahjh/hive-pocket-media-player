@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.16.0-beta';
+  const VERSION = '1.17.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -392,8 +392,8 @@
     if (micLive || current >= 0) { el.hidden = true; return; }
     el.hidden = false;
     el.textContent = readHidePlayer()
-      ? 'Turn on the microphone in the menu — the visuals follow whatever this phone can hear.'
-      : 'Pick some music and press play — the visuals follow the sound. Tap them for full screen.';
+      ? 'Turn on the microphone in the menu — or just drag a finger across here.'
+      : 'Pick some music and press play — the visuals follow the sound. Tap for full screen, drag to paint.';
   }
 
   // ONE place that talks to BOTH renderers, because each one's setConfig REPLACES its config:
@@ -1337,7 +1337,67 @@
   // Effects off means the equalizer alone; effects on means both. Turning them on from
   // "equalizer only" cannot land on "effects only", because that would take away the thing
   // that was on screen a moment ago.
-  $('stage').addEventListener('click', () => setCover(!covered));
+  // ── Painting with a finger ────────────────────────────────────────────────
+  // Touch the visuals and they answer. The whole app has been a thing you watch; this is the one
+  // place it is a thing you touch, and on a phone that is most of what "interactive" means.
+  //
+  // THE GESTURE HAD TO SHARE WITH FULL SCREEN, which was already a tap on this same surface.
+  // Rather than move full screen or make it a double-tap — retraining a gesture that works — the
+  // two are told apart the way a phone usually tells them apart: a clean quick tap is still full
+  // screen, and anything that MOVES or is HELD is painting. Held counts as well as moved, because
+  // "touch the screen" to most people means press, not swipe, and a press that did nothing would
+  // read as the feature being broken.
+  const PAINT_MOVE = 10;     // px before a tap becomes a drag
+  const PAINT_HOLD = 200;    // ms before a press becomes a paint
+  const PAINT_GAP = 80;      // ms between bursts along a drag, so one swipe is not one flood
+  let painting = false, pressX = 0, pressY = 0, lastPaint = 0, holdTimer = 0, pressed = false;
+
+  function paintAt(ev) {
+    // The renderers are built on the first play or the first listen, which means a finger on a
+    // cold app had nothing to draw on and the gesture did nothing at all — the exact first thing
+    // anyone would try. Painting is the one feature here that needs no audio, so it starts them
+    // itself. Caught by testing the gesture on a freshly loaded page rather than a running one.
+    if (!fx) initVisuals();
+    if (!fxShown()) return;             // effects half is off; the equalizer has nothing to paint
+    if (!fx) return;
+    const r = $('stage').getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    const x = (ev.clientX - r.left) / r.width;
+    const y = (ev.clientY - r.top) / r.height;
+    if (x < 0 || x > 1 || y < 0 || y > 1) return;
+    const now = performance.now();
+    if (now - lastPaint < PAINT_GAP) return;
+    lastPaint = now;
+    // fire() only knows the six real effects; 'random' is a Pocket-level idea and is resolved
+    // here, per burst, so a drag under Random paints a different one each time.
+    let effect = readBeatEffect();
+    if (effect === 'random') effect = pick(BEAT_EFFECTS.filter((e) => e !== 'random'));
+    // x and y are 0-1 of the stage, which is what fire() expects — it multiplies by its own
+    // canvas size, so this stays correct in full screen and after a rotation without conversion.
+    fx.fire(effect, { x, y, intensity: PUNCH[readPunch()], palette: readPalette() });
+  }
+
+  $('stage').addEventListener('pointerdown', (ev) => {
+    pressed = true; painting = false;
+    pressX = ev.clientX; pressY = ev.clientY;
+    clearTimeout(holdTimer);
+    holdTimer = setTimeout(() => { if (pressed) { painting = true; paintAt(ev); } }, PAINT_HOLD);
+  });
+  $('stage').addEventListener('pointermove', (ev) => {
+    if (!pressed) return;
+    if (!painting && Math.hypot(ev.clientX - pressX, ev.clientY - pressY) < PAINT_MOVE) return;
+    painting = true;
+    paintAt(ev);
+  });
+  for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
+    $('stage').addEventListener(ev, () => { pressed = false; clearTimeout(holdTimer); });
+  }
+  // The click still owns full screen, so a keyboard Enter or Space on this button keeps working —
+  // those produce a click with no pointer sequence, so `painting` is false and they toggle.
+  $('stage').addEventListener('click', () => {
+    if (painting) { painting = false; return; }
+    setCover(!covered);
+  });
   // Android's back gesture and Escape both leave native full screen without telling this code.
   // Without this the class would stay on and the stage would sit over the whole page with no
   // browser chrome to explain it.

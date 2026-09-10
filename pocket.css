@@ -400,3 +400,8 @@ html, body {
 @media (max-width: 380px) {
   .controls { gap: 0.5rem; flex-wrap: wrap; row-gap: 0.5rem; }
 }
+
+/* The stage takes pointer gestures now, so the browser must not claim them first: without this a
+   drag across the visuals scrolls the page instead of painting, and on a phone that is the only
+   thing that would happen. */
+.stage { touch-action: none; }
