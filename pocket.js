@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.18.0-beta';
+  const VERSION = '1.19.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -155,7 +155,16 @@
   // existed; Pocket simply never asked for any of them and took the default, so the only thing
   // anyone could change here was the weather. 'random' rolls a different one each burst.
   const BEAT_KEY = 'hive-pocket.beat';
-  const BEAT_EFFECTS = ['fireworks', 'confetti', 'embers', 'hearts', 'fountain', 'nova', 'random'];
+  // 'lightning' is Pocket's, not the renderer's: fire() knows six effects and lightning is not
+  // one of them, so choosing it switches the renderer's own beat detector OFF and Pocket drives
+  // all three ranges itself with strikes. Everything else here is handed straight to fire().
+  const BEAT_EFFECTS = ['fireworks', 'confetti', 'embers', 'hearts', 'fountain', 'nova',
+                        'lightning', 'random'];
+  // What 'random' and Surprise me are allowed to land on. Lightning is out of both for the same
+  // reason storm and lightning are out of the ambient roll: it flashes the screen, and the rule
+  // in this codebase is that flashing happens when someone picks it by name and never when dice
+  // pick it for them. Nobody consented to a strobe by pressing a button labelled Surprise me.
+  const ROLLABLE_EFFECTS = BEAT_EFFECTS.filter((e) => e !== 'random' && e !== 'lightning');
   function readBeatEffect() {
     try { const v = localStorage.getItem(BEAT_KEY); return BEAT_EFFECTS.includes(v) ? v : 'fireworks'; }
     catch (e) { return 'fireworks'; }
@@ -232,7 +241,7 @@
   const SAFE_AMBIENTS = AMBIENTS.filter((a) => a !== 'storm' && a !== 'lightning');
   function surprise() {
     writeEqStyle(pick(EQ_SHAPES));
-    writeBeatEffect(pick(BEAT_EFFECTS.filter((e) => e !== 'random')));
+    writeBeatEffect(pick(ROLLABLE_EFFECTS));
     writePalette(pick(CONCRETE));
     writeAmbient(pick(SAFE_AMBIENTS));
     writeSens(pick(Object.keys(SENS)));
@@ -367,6 +376,14 @@
   const MID_STRICT = 1.70, HIGH_STRICT = 1.80;
   let midAvg = 0, highAvg = 0, lastMidAt = 0, lastHighAt = 0;
 
+  // Pocket's OWN bass detector, and the only reason it exists: the renderer's detector can fire
+  // six effects and lightning is not one of them, so when lightning is chosen the renderer's beat
+  // is switched off and this replaces it. Deliberately the renderer's own numbers — bands 0-3,
+  // the 0.12 floor, the sensitivity straight from the setting — so choosing lightning changes
+  // WHAT is drawn on the beat and not WHEN.
+  const BASS_FLOOR = 0.12, BASS_GAP = 200;
+  let bassAvg = 0, lastBassAt = 0;
+
   // Number.isFinite and not `|| 0`, for the same reason the renderer says so in pushBands: one
   // malformed element turns the average into a NaN that never clears, and every later comparison
   // against it is false, so detection dies silently and permanently.
@@ -382,13 +399,26 @@
 
   function driveExtras(bands) {
     if (!Array.isArray(bands) || !bands.length) return;
-    const d = DRIVE[readDrive()];
-    if (!d || (!d.mid && !d.high)) return;
     if (!fx || !fxShown()) return;
     const now = performance.now();
     const sens = SENS[readSens()];
     const punch = PUNCH[readPunch()];
     const pal = readPalette();
+
+    // The bass half, on only while lightning is the chosen burst. The average is kept either way
+    // so switching to lightning mid-track does not start from zero and strike on the first frame.
+    const b = bandEnergy(bands, 0, 3);
+    const bWas = bassAvg;
+    bassAvg = bassAvg * 0.94 + b * 0.06;
+    if (readBeatEffect() === 'lightning' && now - lastBassAt >= BASS_GAP
+        && b >= BASS_FLOOR && b >= bWas * sens) {
+      lastBassAt = now;
+      // Where the renderer puts a beat burst: middle of the stage, a little above centre.
+      strike(0.3 + Math.random() * 0.4, 0.42 + Math.random() * 0.22);
+    }
+
+    const d = DRIVE[readDrive()];
+    if (!d || (!d.mid && !d.high)) return;
 
     // The averages are kept whatever the setting says, so switching from Bass only to Full
     // spectrum does not start from zero and dump a burst on the first frame.
@@ -417,7 +447,10 @@
   function fireOne(x, y, intensity, palette) {
     if (!fx) return;
     let effect = readBeatEffect();
-    if (effect === 'random') effect = pick(BEAT_EFFECTS.filter((e) => e !== 'random'));
+    if (effect === 'random') effect = pick(ROLLABLE_EFFECTS);
+    // strike() keeps its own gap, so calling it from two places in the same frame — a finger and
+    // a detector — costs one bolt, not two.
+    if (effect === 'lightning') { strike(x, y); return; }
     fx.fire(effect, { x, y, intensity, palette });
   }
 
@@ -527,7 +560,11 @@
       ambientCap: q.amb,
       effects: { fountain: FOUNTAIN },
       beat: {
-        effect: readBeatEffect(),
+        // 'lightning' is not one of the renderer's six and it would fall back silently to a
+        // default, so it is never sent: the renderer's beat is switched OFF instead and Pocket's
+        // own bass detector drives the strikes. Anything else goes straight through.
+        enabled: readBeatEffect() !== 'lightning',
+        effect: readBeatEffect() === 'lightning' ? 'fireworks' : readBeatEffect(),
         sensitivity: SENS[readSens()],
         intensity: PUNCH[readPunch()],
       },
@@ -1666,8 +1703,9 @@
     get fxConfig() {
       if (!fx || !fx.getConfig) return null;
       const c = fx.getConfig();
-      return { intensity: c.beat.intensity, effect: c.beat.effect, fountain: c.effects.fountain,
-               hearts: c.effects.hearts, particleCap: c.particleCap };
+      return { intensity: c.beat.intensity, effect: c.beat.effect, beatOn: c.beat.enabled,
+               fountain: c.effects.fountain, hearts: c.effects.hearts,
+               particleCap: c.particleCap };
     },
   };
 })();
