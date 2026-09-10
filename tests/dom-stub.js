@@ -167,6 +167,14 @@ function boot(opts) {
         return node;
       },
     },
+    // applyHidePlayer() walks a list of selectors, both ids and classes. Without this the stub
+    // threw "document.querySelector is not a function" and took two whole smoke suites down with
+    // it — a gap that had been there since hide-player shipped, and that made those suites look
+    // like a code failure rather than a missing stub.
+    querySelector: (sel) => {
+      const s = String(sel || '');
+      return s.charAt(0) === '#' ? get(s.slice(1)) : el(s);
+    },
     querySelectorAll: () => [],
     hidden: false,
     get fullscreenElement() { return fullscreen.element; },

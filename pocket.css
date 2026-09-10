@@ -100,18 +100,8 @@ html, body {
 .linknote.bad { color: #E0655A; }
 
 /* ── stage: the two canvases stacked, effects over the equalizer ── */
-/* The wrapper is the flex item and the thing that goes full screen; the stage and YouTube's
-   player both fill it and take turns. */
+/* The wrapper is the flex item and the thing that goes full screen; the stage fills it. */
 .stagewrap { position: relative; flex: 1 1 auto; min-height: 130px; }
-.ytstage {
-  position: absolute; inset: 0;
-  background: #000;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-.ytstage iframe { width: 100%; height: 100%; border: 0; display: block; }
-
 .stage {
   position: absolute;
   inset: 0;
@@ -137,6 +127,8 @@ html, body {
 }
 .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 #fxCanvas { pointer-events: none; transition: opacity 0.2s; }
+/* Above the effects, and never in the way of the gesture that creates it. */
+#boltCanvas { pointer-events: none; }
 .stage-hint, .stage-tip {
   position: absolute; inset: auto 1rem 1rem; margin: 0; display: block;
   text-align: center; font-size: 0.78rem; color: var(--muted); line-height: 1.5;
@@ -153,9 +145,7 @@ html, body {
   min-height: 0;
 }
 .stagewrap.cover .stage,
-.stagewrap.cover .ytstage,
-.stagewrap:fullscreen .stage,
-.stagewrap:fullscreen .ytstage { border: 0; border-radius: 0; }
+.stagewrap:fullscreen .stage { border: 0; border-radius: 0; }
 .stagewrap:fullscreen { background: #0C0B0A; }
 .stage-tip {
   background: rgba(0, 0, 0, 0.45);
@@ -175,7 +165,7 @@ html, body {
 .now-sub {
   font-size: 0.72rem; color: var(--muted); margin-top: 2px;
   /* TWO LINES, not one with an ellipsis. This line carries the app's explanations — why a link
-     has no visuals, why YouTube refused one, why it needs a connection — and a sentence cut off
+     has no visuals, why a link was refused, why a saved link no longer plays — and a cut-off
      at 'The link may be pri…' reads as a fault rather than as the reason it was written to be. */
   display: -webkit-box;
   -webkit-line-clamp: 2;

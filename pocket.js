@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.17.0-beta';
+  const VERSION = '1.18.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -80,42 +80,32 @@
       return 'That is not a web link. It needs to start with https://';
     } catch (e) { return 'That is not a web link. It needs to start with https://'; }
   }
-  // ── YouTube ──────────────────────────────────────────────────────────────────────────
-  // A YouTube address is not a media file and no <audio> element will ever play one. It needs
-  // YouTube's own player in an iframe, which is why this is the one thing in the app that
-  // reaches the network, the one thing that needs a connection, and the one thing with no
-  // equalizer over it — the sound belongs to another origin and cannot be read from here.
+  // YOUTUBE WAS REMOVED IN 1.18.0, at Harold's word. It was the only thing here that reached
+  // the network, the only thing that needed a connection, and the only thing the equalizer and
+  // the effects could not see — an iframe from another origin whose audio Web Audio is not
+  // allowed to read, so a YouTube track played to a dead stage. An app that is now a visualizer
+  // first has no use for a source it cannot visualise. What went with it: the player, the
+  // playlist handling that made Next mean "next video", the progress poll, the id parser, and
+  // the network permissions in the page's content policy. Direct links to audio FILES are
+  // untouched and still work — that path was never YouTube's.
   //
-  // The ids are matched against a strict character class rather than trusted, because they end
-  // up in the src of a frame. Anything that is not exactly a YouTube id is not a YouTube link.
+  // A saved YouTube link is not deleted, and not silently dropped either: it stays in the queue
+  // and says what happened when you press it. Deleting someone's saved links to tidy up after a
+  // decision they did not make is worse than an honest row that explains itself.
   const YT_HOSTS = ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com',
-                    'youtu.be', 'www.youtube-nocookie.com'];
-  const YT_VIDEO = /^[A-Za-z0-9_-]{11}$/;
-  const YT_LIST = /^[A-Za-z0-9_-]{12,42}$/;
+                    'youtu.be', 'www.youtube-nocookie.com', 'youtube-nocookie.com'];
+  // The ONLY thing left that knows what a YouTube address looks like, and it is a refusal, not a
+  // parser: no id is extracted, nothing is fetched, and nothing reaches a frame.
+  function isDeadLink(u) {
+    try { return YT_HOSTS.includes(new URL(u).hostname); } catch (e) { return false; }
+  }
 
-  function parseYouTube(u) {
-    let p;
-    try { p = new URL(u); } catch (e) { return null; }
-    if (!YT_HOSTS.includes(p.hostname)) return null;
-    // A list wins over a video: an address carrying both is a video seen from inside a
-    // playlist, and the playlist is what the person copied.
-    const list = p.searchParams.get('list');
-    if (list && YT_LIST.test(list)) return { kind: 'playlist', id: list };
-    let id = p.searchParams.get('v');
-    if (!id) {
-      const seg = p.pathname.split('/').filter(Boolean);
-      // youtu.be/ID, /shorts/ID, /embed/ID, /live/ID
-      if (seg.length === 1 && p.hostname === 'youtu.be') id = seg[0];
-      else if (seg.length === 2 && ['shorts', 'embed', 'live', 'v'].includes(seg[0])) id = seg[1];
-    }
-    return id && YT_VIDEO.test(id) ? { kind: 'video', id } : null;
+  function linkRow(l) {
+    return { name: l.name, url: l.url, link: true, dead: isDeadLink(l.url) };
   }
 
   function nameFromUrl(u) {
-    const yt = parseYouTube(u);
-    // A real title needs an API call, a key and a quota. The player hands one over for free the
-    // moment it loads, and the row is renamed then; until it does, say which of the two it is.
-    if (yt) return (yt.kind === 'playlist' ? 'YouTube playlist ' : 'YouTube video ') + yt.id;
+    if (isDeadLink(u)) return 'YouTube link (no longer plays here)';
     try {
       const last = decodeURIComponent(new URL(u).pathname.split('/').filter(Boolean).pop() || '');
       return (last.replace(/\.[^.]+$/, '') || new URL(u).hostname).slice(0, 200);
@@ -132,10 +122,6 @@
   const VISUALS_KEY = 'hive-pocket.visuals';
   const VISUALS = ['both', 'fx', 'eq'];
   let visuals = 'both';
-  // Which backend owns the sound right now. Everything the transport does has to ask, because
-  // the two have nothing in common: one is an <audio> element this page controls directly, the
-  // other is a player inside somebody else's iframe reached through a script they serve.
-  let ytOn = false;
   const fxShown = () => visuals !== 'eq';
   const eqShown = () => visuals !== 'fx';
   let shuffleOn = false;
@@ -322,6 +308,131 @@
   }
   function writePunch(v) { try { localStorage.setItem(PUNCH_KEY, v); } catch (e) {} }
 
+  // ── What drives the visuals ──────────────────────────────────────────────────────────
+  // Until now: the lowest FOUR of sixty-four bands, and nothing else. The renderer's own beat
+  // detector averages bands 0-3 and fires on those alone, which means a track can have a hi-hat
+  // pattern, a vocal line and a guitar and the screen answers none of it — every burst on this
+  // app has been a kick drum. Bands 4-63 were read every frame, handed to the equalizer, drawn
+  // as bars, and then thrown away.
+  //
+  // fx-render.js is shared with the stream overlays and is not edited from here, so this does
+  // not touch its detector. Pocket runs two more of its own, on ranges the bass detector never
+  // looks at, and calls the renderer's public fire() when one trips. Three sources, three
+  // heights on screen, so which part of the music spoke is something you can see and not just
+  // infer.
+  //
+  // WHAT THIS ADDS RATHER THAN HIDES, and the cost: nothing is suppressed, but bursts get more
+  // frequent, and on Battery saver the 300-particle budget is reached sooner — so at Full
+  // spectrum plus Saver the bursts each carry fewer pieces. That is the cap working, not the
+  // setting failing. Set this back to Bass only for exactly the app 1.17 was.
+  const DRIVE_KEY = 'hive-pocket.drive';
+  const DRIVE = {
+    bass: { mid: false, high: false },
+    mid:  { mid: true,  high: false },
+    full: { mid: true,  high: true },
+  };
+  function readDrive() {
+    try { const v = localStorage.getItem(DRIVE_KEY); return DRIVE[v] ? v : 'full'; }
+    catch (e) { return 'full'; }
+  }
+  function writeDrive(v) { try { localStorage.setItem(DRIVE_KEY, v); } catch (e) {} }
+
+  // The two ranges, in band numbers out of 64. Mids are where a voice, a snare and a guitar
+  // body live; highs are hats and cymbals. Both deliberately start above band 4 so they can
+  // never re-detect the same kick the renderer is already firing on.
+  const MID_LO = 10, MID_HI = 30;
+  const HIGH_LO = 42, HIGH_HI = 63;
+  // Floors far below the bass detector's 0.12. That number is right for band 0-3, where the
+  // energy in most music is, and would reject a cymbal outright: a hi-hat that is plainly
+  // audible sits around 0.05 of full scale. The RISE over the running average is what actually
+  // decides a hit here — the floor only keeps a silent room from firing.
+  const MID_FLOOR = 0.055, HIGH_FLOOR = 0.04;
+  const MID_GAP = 260, HIGH_GAP = 150;   // ms; highs are allowed to be quicker, they are smaller
+  // A RATIO ALONE IS NOT ENOUGH UP HERE, which the first build of this got wrong and a test
+  // caught: mids fired 29 times in eight seconds — the minimum gap, and nothing else, was
+  // limiting the rate, which means the detector was not discriminating at all. Mids and highs
+  // have far less dynamic range than a kick drum, so their running average sits close under the
+  // sustain and a 6% rise is cleared by nearly every frame. An ABSOLUTE rise over the average,
+  // in units of full scale, plus a firmer ratio than the bass detector's, is what separates a
+  // hit from a loud passage.
+  //
+  // TUNED AGAINST A MEASURED SIGNAL, not by eye: a generated 8-second loop of 2 kicks, 1 snare
+  // and 4 hi-hats a second, played into the microphone. The first attempt was tuned against a
+  // BAD signal — hard envelope cut-offs made every note a broadband click, so all three
+  // detectors were correctly firing on clicks the music was not supposed to have. With smooth
+  // envelopes: mids land about 2.5 a second, highs about 4.9 against 4 hats a second. Mids run
+  // over because every percussive attack genuinely puts energy in the mid range; that is real,
+  // not a defect, and Bass only turns it off.
+  const MID_RISE = 0.022, HIGH_RISE = 0.016;
+  const MID_STRICT = 1.70, HIGH_STRICT = 1.80;
+  let midAvg = 0, highAvg = 0, lastMidAt = 0, lastHighAt = 0;
+
+  // Number.isFinite and not `|| 0`, for the same reason the renderer says so in pushBands: one
+  // malformed element turns the average into a NaN that never clears, and every later comparison
+  // against it is false, so detection dies silently and permanently.
+  function bandEnergy(bands, lo, hi) {
+    let sum = 0, n = 0;
+    for (let i = lo; i <= hi && i < bands.length; i++) {
+      const v = bands[i];
+      sum += Number.isFinite(v) ? v : 0;
+      n++;
+    }
+    return n ? sum / (n * 255) : 0;
+  }
+
+  function driveExtras(bands) {
+    if (!Array.isArray(bands) || !bands.length) return;
+    const d = DRIVE[readDrive()];
+    if (!d || (!d.mid && !d.high)) return;
+    if (!fx || !fxShown()) return;
+    const now = performance.now();
+    const sens = SENS[readSens()];
+    const punch = PUNCH[readPunch()];
+    const pal = readPalette();
+
+    // The averages are kept whatever the setting says, so switching from Bass only to Full
+    // spectrum does not start from zero and dump a burst on the first frame.
+    const m = bandEnergy(bands, MID_LO, MID_HI);
+    const hi = bandEnergy(bands, HIGH_LO, HIGH_HI);
+    const mWas = midAvg, hWas = highAvg;
+    midAvg = midAvg * 0.94 + m * 0.06;
+    highAvg = highAvg * 0.94 + hi * 0.06;
+
+    if (d.mid && now - lastMidAt >= MID_GAP && m >= MID_FLOOR
+        && m >= mWas * sens * MID_STRICT && m - mWas >= MID_RISE) {
+      lastMidAt = now;
+      // Mid height, and never dead centre: the bass burst lands there, and two bursts stacked on
+      // the same point read as one louder burst rather than as two different instruments.
+      fireOne(0.15 + Math.random() * 0.7, 0.34 + Math.random() * 0.26, punch * 0.65, pal);
+    }
+    if (d.high && now - lastHighAt >= HIGH_GAP && hi >= HIGH_FLOOR
+        && hi >= hWas * sens * HIGH_STRICT && hi - hWas >= HIGH_RISE) {
+      lastHighAt = now;
+      fireOne(0.1 + Math.random() * 0.8, 0.06 + Math.random() * 0.24, punch * 0.4, pal);
+    }
+  }
+
+  // One burst at a point. fire() knows the six real effects only; 'random' is a Pocket-level
+  // idea and is resolved per burst here, which is what makes Random actually vary.
+  function fireOne(x, y, intensity, palette) {
+    if (!fx) return;
+    let effect = readBeatEffect();
+    if (effect === 'random') effect = pick(BEAT_EFFECTS.filter((e) => e !== 'random'));
+    fx.fire(effect, { x, y, intensity, palette });
+  }
+
+  // ── What a finger does ───────────────────────────────────────────────────────────────
+  // 'both' by default: the bolt strikes down to where the finger is and the burst lands where it
+  // hits, which reads as cause and effect. 'off' still swallows the drag — a drag has never
+  // toggled full screen and should not start now — it simply draws nothing.
+  const TOUCH_KEY = 'hive-pocket.touch';
+  const TOUCH_MODES = ['both', 'lightning', 'effect', 'off'];
+  function readTouch() {
+    try { const v = localStorage.getItem(TOUCH_KEY); return TOUCH_MODES.includes(v) ? v : 'both'; }
+    catch (e) { return 'both'; }
+  }
+  function writeTouch(v) { try { localStorage.setItem(TOUCH_KEY, v); } catch (e) {} }
+
   // FOUNTAIN, retuned. Its defaults make it the weakest of the six and the numbers say why, read
   // against its siblings: spread 0.55 is the narrowest of them all (every other effect is 1 or
   // more), gravity 520 the heaviest (confetti 420, hearts 280, fireworks 260), size 2.4 among the
@@ -378,7 +489,6 @@
     // "I hid the player and the music kept going" is not a thing to leave to chance.
     if (off) {
       if (audio && !audio.paused) { try { audio.pause(); } catch (e) {} }
-      if (ytOn) ytStop();
       paintPlay();
     }
     paintStageHint();
@@ -476,8 +586,8 @@
 
   // ── The microphone ──────────────────────────────────────────────────────
   // Why this exists: everything else in this app can only see audio it owns. A file it plays,
-  // yes; a YouTube video or a link from a host that will not grant permission, no — those come
-  // back as silence and the visuals sit dead. The microphone is the one source that can see
+  // yes; a link from a host that will not grant permission, no — those come back as silence and
+  // the visuals sit dead. The microphone is the one source that can see
   // ANY sound in the room, including music playing from another app entirely.
   //
   // ITS ANALYSER IS NEVER CONNECTED TO destination. The element path must be
@@ -596,7 +706,6 @@
     // Listening to the room while this app plays its own file would draw both at once, one of
     // them through a speaker. Pause rather than tear down, so play still resumes where it was.
     if (audio && !audio.paused) { try { audio.pause(); } catch (e) {} }
-    if (ytOn) ytStop();
     paintPlay();
     initVisuals();
     startPump();
@@ -700,16 +809,19 @@
   // `hidden` and not opacity: an invisible canvas is still a canvas being painted every frame,
   // and this runs on a phone battery. The pump below stops feeding whichever one is off, and a
   // renderer re-measures on the way back because it was sized to a box of zero while away.
-  // One place decides what is on the stage, because there are now two reasons for a canvas to
-  // be hidden — the person chose to hide it, or YouTube is using the stage — and two booleans
-  // fighting over the same element is how one of them wins by accident.
+  // One place decides what is on the stage, so the menu and the transport's effects button can
+  // never disagree about what you are looking at.
   function paintStage() {
-    $('ytStage').hidden = !ytOn;
-    $('eqCanvas').hidden = ytOn || !eqShown();
-    $('fxCanvas').hidden = ytOn || !fxShown();
-    if (!ytOn) {
+    $('eqCanvas').hidden = !eqShown();
+    $('fxCanvas').hidden = !fxShown();
+    // The bolt layer belongs to the effects half and hides with it. Hidden, not transparent: a
+    // canvas nobody can see is still a canvas, and this one stops its own loop when it empties.
+    $('boltCanvas').hidden = !fxShown();
+    if ($('boltCanvas').hidden) clearBolts();
+    {
       if (eq && eqShown()) eq.resize();
       if (fx && fxShown()) fx.resize();
+      clearBolts();
     }
   }
 
@@ -746,8 +858,7 @@
 
   function setCover(on) {
     covered = on === true;
-    // The WRAPPER, not the stage: YouTube's player is its sibling and has to come along, or
-    // going full screen on a YouTube track would cover the screen with an empty canvas.
+    // The WRAPPER, not the stage, so anything sitting beside the canvases comes along with it.
     $('stageWrap').classList.toggle('cover', covered);
     $('stage').setAttribute('aria-pressed', covered ? 'true' : 'false');
     label('stage', covered ? 'Tap to leave full screen' : 'Tap for full screen');
@@ -761,6 +872,7 @@
     // The stage just changed size by a lot. A renderer that missed it draws into the old box.
     if (eq && eqShown()) eq.resize();
     if (fx && fxShown()) fx.resize();
+    clearBolts();                       // in-flight bolts were built for the old box
   }
 
   function pump() {
@@ -769,6 +881,8 @@
     if (b) {
       if (eq && eqShown()) eq.push(b);
       if (fx && fxShown()) fx.pushBands(b);
+      // The renderer's detector has just seen bands 0-3. This looks at the rest of them.
+      driveExtras(b);
     }
     requestAnimationFrame(pump);
   }
@@ -817,7 +931,6 @@
     if (i < current) current--;
     else if (wasCurrent) {
       // Do not silently jump to another song. Stop, and leave the next press to the person.
-      if (ytOn) ytStop();
       teardown();
       current = -1;
       $('nowTitle').textContent = queue.length ? 'Nothing loaded' : 'Nothing loaded';
@@ -827,118 +940,6 @@
     if (shuffleOn) buildOrder();
     renderQueue();
     paintLib();
-  }
-
-  // ── YouTube's player ─────────────────────────────────────────────────────────────────
-  let ytPlayer = null;      // the YT.Player, once the script has arrived and built one
-  let ytPlaying = false;    // the player's own idea of whether it is playing
-  let ytTick = 0;           // the progress poll: an iframe fires no timeupdate at this page
-  let ytScript = null;      // the in-flight load, so a second track does not fetch it twice
-
-  const YT_NOTE = 'From YouTube. No equalizer or effects: that sound comes from another site.';
-
-  // Fetches YouTube's player script, once. Rejects rather than hanging if it never arrives,
-  // which is what happens with no connection — and this is the one part of the app that needs
-  // one, so it has to say so instead of sitting on a black rectangle.
-  function ensureYT() {
-    if (window.YT && window.YT.Player) return Promise.resolve(window.YT);
-    if (ytScript) return ytScript;
-    ytScript = new Promise((resolve, reject) => {
-      const done = setTimeout(() => reject(new Error('timeout')), 12000);
-      window.onYouTubeIframeAPIReady = () => { clearTimeout(done); resolve(window.YT); };
-      const s = document.createElement('script');
-      s.src = 'https://www.youtube.com/iframe_api';
-      s.onerror = () => { clearTimeout(done); reject(new Error('blocked')); };
-      document.head.appendChild(s);
-    });
-    // A failed load must not be remembered as in-flight forever; the next track tries again.
-    ytScript.catch(() => { ytScript = null; });
-    return ytScript;
-  }
-
-  function ytStop() {
-    clearInterval(ytTick);
-    ytTick = 0;
-    ytPlaying = false;
-    if (ytPlayer && ytPlayer.stopVideo) { try { ytPlayer.stopVideo(); } catch (e) {} }
-    ytOn = false;
-    paintStage();
-  }
-
-  function ytPoll() {
-    if (!ytPlayer || !ytPlayer.getDuration) return;
-    let d = 0, t = 0;
-    try { d = ytPlayer.getDuration() || 0; t = ytPlayer.getCurrentTime() || 0; } catch (e) { return; }
-    $('tNow').textContent = fmt(t);
-    $('tEnd').textContent = fmt(d);
-    const sk = $('seek');
-    if (document.activeElement !== sk) { sk.max = String(d); sk.value = String(t); }
-    // The player renames the row the moment it knows what it is playing. A playlist renames on
-    // every track, which is the point: the queue says what is actually on.
-    const data = ytPlayer.getVideoData ? ytPlayer.getVideoData() : null;
-    const t0 = queue[current];
-    if (data && data.title && t0 && t0.yt && t0.name !== data.title) {
-      t0.name = String(data.title).slice(0, 200);
-      renderQueue();
-      $('nowTitle').textContent = t0.name;
-    }
-  }
-
-  function ytState(ev) {
-    // 1 playing, 2 paused, 0 ended. The rest are buffering and cueing, which are not states
-    // the transport has anything to say about.
-    if (ev.data === 1) {
-      ytPlaying = true;
-      ytPoll();                                    // name the row now, not on the next tick
-      if (!ytTick) ytTick = setInterval(ytPoll, 500);
-    }
-    else if (ev.data === 2) ytPlaying = false;
-    else if (ev.data === 0) { ytPlaying = false; next(true); return; }
-    paintPlay();
-  }
-
-  function playYouTube(i, t) {
-    teardown();          // whatever the <audio> element was doing, it is not doing it now
-    current = i;
-    ytOn = true;
-    paintStage();
-    $('nowTitle').textContent = t.name;
-    $('nowSub').textContent = YT_NOTE;
-    $('stageHint').hidden = true;
-    renderQueue();
-    paintPlay();
-
-    ensureYT().then((YT) => {
-      // The queue may have moved on while the script was in the air.
-      if (!ytOn || queue[current] !== t) return;
-      const load = () => {
-        if (t.yt.kind === 'playlist') ytPlayer.loadPlaylist({ list: t.yt.id, listType: 'playlist' });
-        else ytPlayer.loadVideoById(t.yt.id);
-      };
-      if (ytPlayer && ytPlayer.loadVideoById) { load(); return; }
-      ytPlayer = new YT.Player('ytFrame', {
-        // nocookie, and only the controls the player needs: this app is not in the business of
-        // showing anyone related videos.
-        host: 'https://www.youtube-nocookie.com',
-        playerVars: { playsinline: 1, rel: 0, modestbranding: 1 },
-        events: {
-          onReady: load,
-          onStateChange: ytState,
-          onError: () => {
-            $('nowSub').textContent = 'YouTube would not play that one. It may be private, '
-              + 'removed, or blocked outside YouTube.';
-            ytPlaying = false;
-            paintPlay();
-          },
-        },
-      });
-    }).catch(() => {
-      ytOn = false;
-      paintStage();
-      $('nowSub').textContent = 'YouTube could not be reached. It needs a connection; '
-        + 'music on this phone does not.';
-      paintPlay();
-    });
   }
 
   // ── Playback ─────────────────────────────────────────────────────────────────────────
@@ -982,10 +983,17 @@
   function play(i, opts) {
     const t = queue[i];
     if (!t) return;
-    if (t.yt) { playYouTube(i, t); return; }
-    // Coming back to ordinary audio: give the stage its canvases back before anything else,
-    // or the equalizer draws behind an iframe nobody can see past.
-    if (ytOn) ytStop();
+    // A link saved back when this app had a YouTube player. It is kept rather than deleted, and
+    // says so rather than failing as a silent dead track — a row that does nothing and explains
+    // nothing is the worst of the three options.
+    if (t.dead) {
+      current = i;
+      $('nowTitle').textContent = t.name;
+      $('nowSub').textContent = 'YouTube was removed from this app. This saved link cannot play; '
+        + 'remove it from the queue, or play the sound out loud and press Listen.';
+      renderQueue(); paintPlay();
+      return;
+    }
     const el = ensureAudio();
     teardown();
     current = i;
@@ -1024,16 +1032,6 @@
   }
 
   function toggle() {
-    // Route on WHAT IS CURRENT, not on the flag. Picking new files sets current to -1 and leaves
-    // YouTube playing, and a toggle that trusted the flag alone answered a press of Play by
-    // pausing YouTube — the newly picked music never started, and the button looked broken.
-    const t = queue[current];
-    if (ytOn && t && t.yt) {
-      if (!ytPlayer) return;                       // still fetching the script
-      try { if (ytPlaying) ytPlayer.pauseVideo(); else ytPlayer.playVideo(); } catch (e) {}
-      return;
-    }
-    if (ytOn) ytStop();                            // the queue has moved off it
     if (!audio || current < 0) { if (queue.length) play(0); return; }
     if (audio.paused) audio.play().then(started).catch(() => {});
     else audio.pause();
@@ -1042,13 +1040,6 @@
   // of the queue — pressing Next at the last track wrapping is what people expect.
   function next(fromEnd) {
     if (!queue.length) return;
-    // Inside a YouTube playlist, Next means the next video in it — the whole playlist is one
-    // row in this queue, and skipping past it would throw away the rest of what was asked for.
-    // At the end of the playlist the player reports ENDED, which arrives here as fromEnd.
-    if (ytOn && !fromEnd && ytPlayer && queue[current] && queue[current].yt
-        && queue[current].yt.kind === 'playlist') {
-      try { ytPlayer.nextVideo(); return; } catch (e) { /* fall through to the queue */ }
-    }
     if (fromEnd && repeatMode === 'one') { play(current); return; }
     if (shuffleOn) {
       if (!order || order.length !== queue.length) buildOrder();
@@ -1070,35 +1061,28 @@
   // The queue ran out and nothing says to carry on. Stop where it is rather than looping
   // silently back to the top, which is how a player ends up playing all night.
   function stopHere() {
-    if (ytOn && ytPlayer) { try { ytPlayer.pauseVideo(); } catch (e) {} }
-    else if (audio) audio.pause();
+    if (audio) audio.pause();
     $('nowSub').textContent = 'End of the queue.';
     paintPlay();
   }
   function prev() {
     if (!queue.length) return;
-    if (ytOn && ytPlayer && queue[current] && queue[current].yt
-        && queue[current].yt.kind === 'playlist') {
-      try { ytPlayer.previousVideo(); return; } catch (e) { /* fall through to the queue */ }
-    }
-    if (!ytOn && audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
+    if (audio && audio.currentTime > 3) { audio.currentTime = 0; return; }
     play(current <= 0 ? queue.length - 1 : current - 1);
   }
 
   // ── Painting ─────────────────────────────────────────────────────────────────────────
   function paintPlay() {
-    const playing = ytOn ? ytPlaying : (!!audio && !audio.paused);
+    const playing = !!audio && !audio.paused;
     $('playIcon').hidden = playing;
     $('pauseIcon').hidden = !playing;
     label('playBtn', playing ? 'Pause' : 'Play');
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
-    // No pump for YouTube: there are no bands to push. The analyser cannot read another
-    // origin's audio, so running the loop would only burn a phone battery drawing nothing.
-    if (!playing || ytOn) stopPump(); else startPump();
+    if (!playing) stopPump(); else startPump();
   }
 
   function paintTime() {
-    if (ytOn || !audio) return;   // the iframe has its own clock, polled in ytPoll()
+    if (!audio) return;
     const d = isFinite(audio.duration) ? audio.duration : 0;
     $('tNow').textContent = fmt(audio.currentTime);
     $('tEnd').textContent = fmt(d);
@@ -1134,7 +1118,7 @@
       .map((f) => ({ name: f.name.replace(/\.[^.]+$/, ''), url: URL.createObjectURL(f), file: f }));
     current = -1;
     // Saved links are kept: picking files replaces the FILES, not the library.
-    queue = queue.concat(readLinks().map((l) => ({ name: l.name, url: l.url, link: true, yt: parseYouTube(l.url) })));
+    queue = queue.concat(readLinks().map(linkRow));
     if (shuffleOn) buildOrder();
     renderQueue();
     paintLib();
@@ -1151,12 +1135,20 @@
     const u = String(raw || '').trim();
     if (!u) return;
     if (!safeUrl(u)) { saveNote(whyBad(u), true); return; }
+    // Refused at the door rather than saved as a row that cannot play. The microphone is a real
+    // answer here and not a consolation: it is how this app visualises anything it cannot read.
+    if (isDeadLink(u)) {
+      saveNote('YouTube was removed from this app — its sound comes from another site and the '
+             + 'equalizer and effects could never see it. Play it in the YouTube app out loud '
+             + 'and press Listen, and the visuals follow it properly.', true);
+      return;
+    }
     const links = readLinks();
     if (links.some((l) => l.url === u)) { saveNote('That link is already saved.'); return; }
     const entry = { name: nameFromUrl(u), url: u };
     links.push(entry);
     writeLinks(links);
-    queue.push({ name: entry.name, url: entry.url, link: true, yt: parseYouTube(entry.url) });
+    queue.push(linkRow(entry));
     renderQueue();
     $('linkInput').value = '';
     saveNote('Saved. It will still be here next time you open the app.');
@@ -1191,6 +1183,8 @@
     $('punchSel').value = readPunch();
     $('hidePlayer').checked = readHidePlayer();
     $('qualSel').value = readQuality();
+    $('driveSel').value = readDrive();
+    $('touchSel').value = readTouch();
     $('palSel').value = readPalette();
     $('eqSel').value = readEqStyle();
     paintLook();
@@ -1272,6 +1266,20 @@
     applyRenderers();
   });
 
+  $('driveSel').addEventListener('change', () => {
+    writeDrive(DRIVE[$('driveSel').value] ? $('driveSel').value : 'full');
+    // No applyRenderers(): this is Pocket's own detector, not renderer config. The next frame
+    // out of pump() already reads the new value.
+  });
+
+  $('touchSel').addEventListener('change', () => {
+    const v = TOUCH_MODES.includes($('touchSel').value) ? $('touchSel').value : 'both';
+    writeTouch(v);
+    // A bolt still in the air when lightning is switched off would outlive the setting by a
+    // fifth of a second and look like the switch failed.
+    if (v === 'effect' || v === 'off') clearBolts();
+  });
+
   $('hidePlayer').addEventListener('change', () => {
     writeHidePlayer($('hidePlayer').checked);
     applyHidePlayer();
@@ -1311,7 +1319,6 @@
   $('prevBtn').addEventListener('click', prev);
   $('seek').addEventListener('input', () => {
     const v = Number($('seek').value);
-    if (ytOn) { if (ytPlayer && ytPlayer.seekTo) { try { ytPlayer.seekTo(v, true); } catch (e) {} } return; }
     if (audio) audio.currentTime = v;
   });
   function paintModes() {
@@ -1337,6 +1344,166 @@
   // Effects off means the equalizer alone; effects on means both. Turning them on from
   // "equalizer only" cannot land on "effects only", because that would take away the thing
   // that was on screen a moment ago.
+  // ── Finger lightning ─────────────────────────────────────────────────────────────────
+  // The renderer HAS lightning, but only as weather: bolts are scheduled internally by the storm
+  // and lightning ambient modes, they pick their own x, and there is no public way to ask for one
+  // at a point. fx-render.js renders into other people's streams and is not edited from here.
+  //
+  // So the bolt is drawn by Pocket, on its own canvas over the effects, using the renderer's own
+  // exported geometry (boltPath) and palette sampling (stopsFor/sample) — the same shape and the
+  // same colour maths, not a second implementation that will drift away from the house look.
+  //
+  // FLASHING, said plainly: this draws a bolt and a dim whole-frame flash. The renderer's hard
+  // ceilings are copied down and made stricter here, and nothing in Settings can raise them.
+  const BOLT_GAP = 110;         // ms between strikes along a drag
+  const BOLT_FLASH_GAP = 420;   // ms between whole-frame flashes — four times the strike gap, so
+                                // flashes can never stack however fast a finger moves
+  const BOLT_FLASH_MAX = 0.10;  // dimmer than the renderer's own 0.12 ceiling
+  const MAX_FINGER_BOLTS = 5;
+  let boltCv = null, boltCtx = null, boltDpr = 1, boltW = 0, boltH = 0;
+  let fbolts = [], boltRaf = 0, boltLast = 0, lastBoltAt = 0, lastFlashAt = 0;
+
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  function boltReady() {
+    if (!boltCv) { boltCv = $('boltCanvas'); if (!boltCv) return false; }
+    if (!boltCtx) { try { boltCtx = boltCv.getContext('2d'); } catch (e) { return false; } }
+    return !!boltCtx;
+  }
+
+  // Same sizing rule the renderers use: cap the pixel ratio at 2, because 3 costs 2.25x the fill
+  // for nothing anyone can see on a phone.
+  function sizeBolt() {
+    if (!boltReady()) return;
+    boltDpr = Math.min(window.devicePixelRatio || 1, 2);
+    const r = boltCv.getBoundingClientRect();
+    const w = Math.max(1, Math.round(r.width || boltCv.clientWidth || 300));
+    const h = Math.max(1, Math.round(r.height || boltCv.clientHeight || 150));
+    if (w !== boltW || h !== boltH || boltCv.width !== Math.round(w * boltDpr)) {
+      boltW = w; boltH = h;
+      boltCv.width = Math.round(w * boltDpr);
+      boltCv.height = Math.round(h * boltDpr);
+    }
+  }
+
+  // Mostly white with a cast of the palette, washed the same 75% of the way to white that the
+  // renderer's own makeBolt() uses — a bolt that is fully 'fire' orange reads as a crack in the
+  // screen rather than as light.
+  function boltRgb() {
+    try {
+      const p = readPalette();
+      const name = p === 'random' ? pick(CONCRETE) : p;
+      const base = FxRender.sample(FxRender.stopsFor(name, null, null), 0.15);
+      return base.map((c) => Math.round(c + (255 - c) * 0.75));
+    } catch (e) { return [235, 240, 255]; }
+  }
+
+  function strike(nx, ny) {
+    if (!boltReady()) return;
+    const now = performance.now();
+    if (now - lastBoltAt < BOLT_GAP) return;
+    lastBoltAt = now;
+    sizeBolt();
+    const w = boltW, h = boltH;
+    if (!w || !h) return;
+    const tx = nx * w, ty = ny * h;
+    // The trunk ENDS at the finger. Weather lightning ends wherever it likes; this one is being
+    // aimed, and a bolt that stops short of the point you are touching does not read as aimed.
+    const x0 = tx + rand(-w * 0.12, w * 0.12);
+    const trunk = FxRender.boltPath(x0, rand(-12, h * 0.05), tx, ty, h * 0.07, 5);
+    const branches = [];
+    const n = 1 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < n; i++) {
+      const at = trunk[2 + Math.floor(Math.random() * Math.max(1, trunk.length - 8))];
+      if (!at) continue;
+      branches.push(FxRender.boltPath(at[0], at[1],
+        at[0] + rand(-w * 0.09, w * 0.09), at[1] + rand(h * 0.05, h * 0.16), h * 0.04, 3));
+    }
+    const life = rand(0.16, 0.26);
+    // The flash is opted into per strike, not per bolt drawn, so a fast drag gets bolts at 110ms
+    // and flashes at 420ms rather than one flash per bolt.
+    let flash = false;
+    if (now - lastFlashAt >= BOLT_FLASH_GAP && !reducedMotion()) { flash = true; lastFlashAt = now; }
+    fbolts.push({ trunk, branches, rgb: boltRgb(), life, maxLife: life, tx, ty, flash });
+    // Oldest first: a bolt that has been on screen longest is the one closest to gone anyway.
+    while (fbolts.length > MAX_FINGER_BOLTS) fbolts.shift();
+    if (!boltRaf) { boltLast = now; boltRaf = requestAnimationFrame(boltLoop); }
+  }
+
+  // Two strokes per polyline — wide and faint for the halo, narrow and bright for the core.
+  // That is the renderer's no-shadowBlur rule; shadowBlur on a path this long is the one thing
+  // that would actually cost frames here.
+  function strokeBolt(pts, alpha, width) {
+    if (!pts || pts.length < 2) return;
+    boltCtx.beginPath();
+    boltCtx.moveTo(pts[0][0], pts[0][1]);
+    for (let i = 1; i < pts.length; i++) boltCtx.lineTo(pts[i][0], pts[i][1]);
+    boltCtx.globalAlpha = alpha * 0.35;
+    boltCtx.lineWidth = width * 3.2;
+    boltCtx.stroke();
+    boltCtx.globalAlpha = alpha;
+    boltCtx.lineWidth = width;
+    boltCtx.stroke();
+  }
+
+  // Runs ONLY while a bolt is alive. An idle stage costs nothing — no timer, no rAF, no canvas
+  // being cleared sixty times a second for an effect nobody triggered.
+  function boltLoop() {
+    boltRaf = 0;
+    if (!boltCtx) return;
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - boltLast) / 1000);
+    boltLast = now;
+    for (let i = fbolts.length - 1; i >= 0; i--) {
+      fbolts[i].life -= dt;
+      if (fbolts[i].life <= 0) fbolts.splice(i, 1);
+    }
+    boltCtx.setTransform(boltDpr, 0, 0, boltDpr, 0, 0);
+    boltCtx.clearRect(0, 0, boltW, boltH);
+    if (!fbolts.length) return;          // cleared and stopped; nothing scheduled
+    boltCtx.globalCompositeOperation = 'lighter';
+    boltCtx.lineJoin = 'round';
+    boltCtx.lineCap = 'round';
+    for (const b of fbolts) {
+      const t = Math.max(0, Math.min(1, b.life / b.maxLife));
+      const age = b.maxLife - b.life;
+      const f = b.flash && age < 0.07 ? 1 - age / 0.07 : 0;
+      if (f > 0) {
+        boltCtx.globalAlpha = BOLT_FLASH_MAX * f;
+        boltCtx.fillStyle = 'rgb(' + b.rgb[0] + ',' + b.rgb[1] + ',' + b.rgb[2] + ')';
+        boltCtx.fillRect(0, 0, boltW, boltH);
+      }
+      boltCtx.strokeStyle = 'rgb(' + b.rgb[0] + ',' + b.rgb[1] + ',' + b.rgb[2] + ')';
+      strokeBolt(b.trunk, t, 2.2);
+      for (const br of b.branches) strokeBolt(br, t * 0.55, 1.3);
+      // The strike point. A bolt that lands on nothing looks like it passed through the screen;
+      // a bright spot where the finger is says it arrived.
+      const r = Math.max(6, boltH * 0.045) * (0.6 + t * 0.4);
+      try {
+        const g = boltCtx.createRadialGradient(b.tx, b.ty, 0, b.tx, b.ty, r);
+        g.addColorStop(0, 'rgba(' + b.rgb[0] + ',' + b.rgb[1] + ',' + b.rgb[2] + ',' + (0.9 * t) + ')');
+        g.addColorStop(1, 'rgba(' + b.rgb[0] + ',' + b.rgb[1] + ',' + b.rgb[2] + ',0)');
+        boltCtx.globalAlpha = 1;
+        boltCtx.fillStyle = g;
+        boltCtx.beginPath();
+        boltCtx.arc(b.tx, b.ty, r, 0, Math.PI * 2);
+        boltCtx.fill();
+      } catch (e) {}
+    }
+    boltRaf = requestAnimationFrame(boltLoop);
+  }
+
+  // A rotation or a jump into full screen changes the box under a live bolt. Cheaper and more
+  // honest to drop what is in flight than to redraw it against coordinates it was never built in.
+  function clearBolts() {
+    fbolts.length = 0;
+    if (boltRaf) { cancelAnimationFrame(boltRaf); boltRaf = 0; }
+    if (boltCtx && boltW && boltH) {
+      boltCtx.setTransform(boltDpr, 0, 0, boltDpr, 0, 0);
+      boltCtx.clearRect(0, 0, boltW, boltH);
+    }
+  }
+
   // ── Painting with a finger ────────────────────────────────────────────────
   // Touch the visuals and they answer. The whole app has been a thing you watch; this is the one
   // place it is a thing you touch, and on a phone that is most of what "interactive" means.
@@ -1353,6 +1520,8 @@
   let painting = false, pressX = 0, pressY = 0, lastPaint = 0, holdTimer = 0, pressed = false;
 
   function paintAt(ev) {
+    const mode = readTouch();
+    if (mode === 'off') return;         // the drag is still swallowed; it just draws nothing
     // The renderers are built on the first play or the first listen, which means a finger on a
     // cold app had nothing to draw on and the gesture did nothing at all — the exact first thing
     // anyone would try. Painting is the one feature here that needs no audio, so it starts them
@@ -1365,16 +1534,17 @@
     const x = (ev.clientX - r.left) / r.width;
     const y = (ev.clientY - r.top) / r.height;
     if (x < 0 || x > 1 || y < 0 || y > 1) return;
-    const now = performance.now();
-    if (now - lastPaint < PAINT_GAP) return;
-    lastPaint = now;
-    // fire() only knows the six real effects; 'random' is a Pocket-level idea and is resolved
-    // here, per burst, so a drag under Random paints a different one each time.
-    let effect = readBeatEffect();
-    if (effect === 'random') effect = pick(BEAT_EFFECTS.filter((e) => e !== 'random'));
-    // x and y are 0-1 of the stage, which is what fire() expects — it multiplies by its own
-    // canvas size, so this stays correct in full screen and after a rotation without conversion.
-    fx.fire(effect, { x, y, intensity: PUNCH[readPunch()], palette: readPalette() });
+    // The bolt keeps its own clock, deliberately: it is a slower, heavier thing than a burst and
+    // one per burst would be a strobe. strike() enforces it, so calling this every move is safe.
+    if (mode === 'both' || mode === 'lightning') strike(x, y);
+    if (mode === 'both' || mode === 'effect') {
+      const now = performance.now();
+      if (now - lastPaint < PAINT_GAP) return;
+      lastPaint = now;
+      // x and y are 0-1 of the stage, which is what fire() expects — it multiplies by its own
+      // canvas size, so this stays correct in full screen and after a rotation without conversion.
+      fireOne(x, y, PUNCH[readPunch()], readPalette());
+    }
   }
 
   $('stage').addEventListener('pointerdown', (ev) => {
@@ -1442,7 +1612,7 @@
     setTimeout(() => { micStart(false); }, 0);
   }
   applyVisuals(readVisuals());
-  queue = readLinks().map((l) => ({ name: l.name, url: l.url, link: true, yt: parseYouTube(l.url) }));
+  queue = readLinks().map(linkRow);
   if (shuffleOn) buildOrder();
   renderQueue();
   paintLib();
@@ -1463,6 +1633,11 @@
     get punch() { return { name: readPunch(), value: PUNCH[readPunch()] }; },
     get playerHidden() { return readHidePlayer(); },
     get quality() { return { name: readQuality(), caps: QUALITY[readQuality()] }; },
+    get drive() { return { name: readDrive(), on: DRIVE[readDrive()] }; },
+    get driveAvg() { return { mid: midAvg, high: highAvg }; },
+    get touch() { return readTouch(); },
+    get bolts() { return fbolts.length; },
+    strike,
     addLink,
     removeAt,
     get queue() { return queue; },
@@ -1479,8 +1654,7 @@
     micStart, micStop,
     get visuals() { return visuals; },
     get covered() { return covered; },
-    get youtube() { return ytOn; },
-    parseYouTube,
+    isDeadLink,
     // Read-only counts from the effects renderer. Storm and lightning draw bolts as an event
     // subsystem separate from the weather particles, so 'is lightning actually striking' cannot
     // be answered from the config — only from here.
