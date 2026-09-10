@@ -162,6 +162,7 @@
       <button class="sheet-btn" id="micBtn" type="button" aria-pressed="false"
               title="Draw the visuals from what this phone can hear">Listen with the microphone</button>
       <p class="set-note" id="micNote">Not listening.</p>
+      <p class="set-note mono diag" id="micDiag" hidden></p>
       <label class="mic-auto" for="micAuto">
         <input type="checkbox" id="micAuto">
         <span>Start listening when the app opens<small>Comes back on its own next time, with no tap. Only the microphone can do this.</small></span>
@@ -180,6 +181,21 @@
       </select>
       <p class="set-note">The effects button on the transport switches the effects half of this
         on and off, and lands back here — the two are the same setting.</p>
+    </div>
+
+    <div class="set">
+      <label class="set-lab" for="beatSel">What lands on the beat</label>
+      <select id="beatSel" title="The burst the visuals throw when the music hits">
+        <option value="fireworks">Fireworks</option>
+        <option value="confetti">Confetti</option>
+        <option value="embers">Embers</option>
+        <option value="hearts">Hearts</option>
+        <option value="fountain">Fountain</option>
+        <option value="nova">Nova</option>
+        <option value="random">Random — a different one each burst</option>
+      </select>
+      <p class="set-note">Thrown on the bass, over the background below. Bursts need real volume:
+        quiet room sound moves the equalizer but will not set these off.</p>
     </div>
 
     <div class="set">

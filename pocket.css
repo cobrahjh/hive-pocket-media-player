@@ -295,3 +295,7 @@ html, body {
 .mic-auto input { width: 20px; height: 20px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--hive); }
 .mic-auto small { display: block; margin-top: 3px; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
 #micBtn[aria-pressed="true"] { border-color: var(--hive); color: var(--hive); }
+
+/* The beat readout. Deliberately plain and small: it is a measurement, not a feature, and it
+   only appears while the microphone is open. */
+.diag { font-size: 0.66rem; line-height: 1.5; color: var(--muted); word-break: break-word; }
