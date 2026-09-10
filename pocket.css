@@ -295,3 +295,16 @@ html, body {
 .mic-auto input { width: 20px; height: 20px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--hive); }
 .mic-auto small { display: block; margin-top: 3px; color: var(--muted); font-size: 0.72rem; line-height: 1.45; }
 #micBtn[aria-pressed="true"] { border-color: var(--hive); color: var(--hive); }
+
+/* Landscape on a phone. Measured at 915x412 and 780x360: with the player showing, the stage was
+   down to 36% of the height and hitting its 130px floor, because the header, now-playing,
+   transport and queue all keep their portrait sizes. This buys the stage back about 70px from
+   padding, gaps and the one line of helper text that is pure repetition once you are using the
+   app. THE CONTROLS ARE NOT TOUCHED: 44px is the floor everywhere and this is not the place to
+   negotiate it — the whole point of that rule is the moments when a phone is awkward to hold. */
+@media (orientation: landscape) and (max-height: 480px) {
+  .app { gap: 0.4rem; padding-left: 0.5rem; padding-right: 0.5rem; }
+  .now-sub { display: none; }
+  .scrub { margin-top: 0.25rem; }
+  .queue-head { display: none; }
+}

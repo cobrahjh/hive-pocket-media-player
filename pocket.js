@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.10.0-beta';
+  const VERSION = '1.11.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -399,6 +399,41 @@
 
   function micNote(msg) { const el = $('micNote'); if (el) el.textContent = msg; }
 
+  // Keeping the screen awake. Measured before this shipped rather than after: a live microphone,
+  // both canvases and a bright screen cost 3% of Harold's battery in 15 minutes — about 12% an
+  // hour, which is ordinary screen-on territory and cheap enough that the density caps do not
+  // need turning down to afford it.
+  //
+  // It follows the MICROPHONE, not full screen. A phone propped against something is listening
+  // whether or not the stage fills the screen, and that is the case where sleeping ruins it.
+  // Full screen stays a deliberate tap and does not imply this.
+  let wakeLock = null;
+
+  async function keepAwake(on) {
+    if (!on) {
+      const held = wakeLock; wakeLock = null;
+      if (held) { try { await held.release(); } catch (e) { /* already gone */ } }
+      return;
+    }
+    if (wakeLock || !navigator.wakeLock || document.visibilityState !== 'visible') return;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      // The browser drops it on its own when the page is hidden, and does not tell this code
+      // beforehand. Clearing the handle here keeps the re-acquire below from thinking it still
+      // holds one it does not.
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (e) {
+      wakeLock = null;                 // refused, or no support: the app works, the screen sleeps
+    }
+  }
+
+  // A wake lock is released whenever the page goes to the background, and is NOT restored when
+  // it comes back. Without this, switching apps once and returning leaves the screen sleeping
+  // again with the microphone still open, which reads as the feature having quietly broken.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && micLive) keepAwake(true);
+  });
+
   function micPaint() {
     const b = $('micBtn');
     if (b) {
@@ -471,13 +506,15 @@
     if (ctx.state === 'suspended') {
       try { await ctx.resume(); } catch (e) { /* refused */ }
     }
+    await keepAwake(true);
+    const awake = wakeLock ? ' The screen will stay awake.' : '';
     if (ctx.state === 'suspended') {
-      micNote('Listening — tap the screen once to let the phone start drawing.');
+      micNote('Listening — tap the screen once to let the phone start drawing.' + awake);
       armResume();
     } else {
-      micNote(fromGesture === false
+      micNote((fromGesture === false
         ? 'Listening. Started by itself, because you asked it to.'
-        : 'Listening.');
+        : 'Listening.') + awake);
     }
     micPaint();
     return true;
@@ -508,6 +545,7 @@
       micStream = null;
     }
     if (current < 0) stopPump();
+    keepAwake(false);
     micNote('Not listening.');
     micPaint();
   }
@@ -1241,6 +1279,7 @@
     get graphReady() { return !!(ctx && analyser && srcNode); },
     get micLive() { return micLive; },
     get micAuto() { return readMicAuto(); },
+    get awake() { return !!wakeLock; },
     // Reports only that the microphone has an analyser of its own. The guarantee that it never
     // reaches the speakers is STRUCTURAL — nothing is ever connected downstream of it — and no
     // getter can prove that from here; read the three connect() calls in this file instead.
