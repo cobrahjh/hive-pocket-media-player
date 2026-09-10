@@ -416,6 +416,34 @@
       <button class="sheet-btn danger" id="forgetLinks" title="Remove every saved link" type="button">Forget all saved links</button>
     </div>
 
+    <details class="grp" id="reportGrp">
+      <summary>Report a problem</summary>
+      <div class="set">
+        <label class="set-lab" for="reportText">What happened?</label>
+        <textarea id="reportText" rows="4" placeholder="What you did, what you expected, what happened instead."
+                  aria-describedby="reportNote"></textarea>
+        <p class="set-note" id="reportNote">Kept on this phone as you type, so a half-written
+          note survives closing the menu.</p>
+      </div>
+      <div class="set">
+        <button class="sheet-btn" id="reportSend" type="button"
+                title="Open your mail app with the report and the details below already filled in">Send by email</button>
+        <button class="sheet-btn ghost" id="reportCopy" type="button"
+                title="Put the report and the details below on the clipboard"
+                style="margin-top:0.5rem">Copy instead</button>
+        <p class="set-note" id="reportSaid" hidden></p>
+        <p class="set-note">Email opens whatever mail app this phone uses, with everything already
+          written — nothing is sent until you press send there, and this app still never talks to
+          a server itself. Copy is for a phone with no mail app set up.</p>
+      </div>
+      <details class="grp" id="diagGrp">
+        <summary>Exactly what gets attached</summary>
+        <p class="set-note">Shown in full, never a hidden blob. The names of your music, your
+          saved links and anything you are playing are <b>not</b> in here and never will be.</p>
+        <pre class="diag" id="reportDiag">—</pre>
+      </details>
+    </details>
+
     <details class="grp">
       <summary>How it works</summary>
       <ul class="help">
@@ -438,6 +466,15 @@
           app is not allowed to read, so it was the one thing here that played to a dead stage —
           no bars, no bursts. Play it out loud in the YouTube app and press Listen instead, and
           the visuals follow it properly. Links saved before are kept but say so when pressed.</li>
+        <li><b>Reacts to</b> — which parts of the sound throw a burst. Bass is the kick drum;
+          mids are voices and guitars, mid-screen; highs are hats and cymbals, near the top.</li>
+        <li><b>Lightning</b> is in both the Bursts list and the finger setting. A bolt strikes on
+          the beat, or down to wherever you touch. It flashes, so Random and Surprise me never
+          choose it for you.</li>
+        <li><b>Report a problem</b> — in this menu. Write what happened and press Send by email;
+          your mail app opens with the report and the app's own state already in it, and you
+          press send there. Nothing about your music is included, and you can read exactly what
+          is attached before you send it.</li>
         <li><b>Everything works offline now</b>, including the next time you open the app. Nothing
           in this app reaches the network at all.</li>
       </ul>
@@ -448,7 +485,9 @@
       <p class="set-note">
         <strong>Hive Pocket Media Player</strong> <span id="aboutVer" class="mono"></span><br>
         Everything runs on this phone and your music is never uploaded. Since 1.18.0 nothing here
-        reaches the network at all — YouTube was the last thing that did.
+        reaches the network at all — YouTube was the last thing that did. Reporting a problem does
+        not change that: the app hands the text to your mail app, which is the thing that sends
+        it, after you press send in it.
       </p>
       <p class="set-note">
         It asks for your music each time it starts cold: a phone will not let a web app remember a

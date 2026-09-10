@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.21.0-beta';
+  const VERSION = '1.22.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1284,6 +1284,9 @@
     $('qualSel').value = readQuality();
     $('driveSel').value = readDrive();
     $('touchSel').value = readTouch();
+    $('reportText').value = readReport();
+    paintDiag();
+    reportSaid('');
     $('palSel').value = readPalette();
     $('eqSel').value = readEqStyle();
     paintLook();
@@ -1304,6 +1307,151 @@
     $('sheetBack').hidden = true; $('sheet').hidden = true;
     $('menuBtn').setAttribute('aria-expanded', 'false');
     $('menuBtn').focus();
+  }
+
+  // ── Reporting a problem ──────────────────────────────────────────────────────────────
+  // A visualizer with no server still has to be able to say when it is broken, and the person
+  // saying so is usually not the person who can read a console. So the app assembles the report
+  // itself: what they typed, plus the state that actually explains a bug on a phone.
+  //
+  // NOTHING IS SENT FROM HERE. mailto: hands the text to whatever mail app the phone uses and
+  // that app sends it, after the person presses send in it — so the app keeps the property it
+  // gained when YouTube went: it never opens a connection itself. Copy is the fallback for a
+  // phone with no mail app configured, which is common enough to need a real answer rather than
+  // a button that silently does nothing.
+  //
+  // WHAT IS DELIBERATELY NOT IN A REPORT: the names of their music, their saved link addresses,
+  // and what is playing. A bug report is not a reason to hand over a library, and a diagnostic
+  // block nobody dares read is worse than none. It is shown in full, in the sheet, before it can
+  // be sent.
+  const REPORT_KEY = 'hive-pocket.report';
+
+  // Split so the address is not a literal string in the served file. This stops a crawler that
+  // only reads source; it does NOT stop one that runs the page, and it is not claimed to.
+  const REPORT_TO = ['hjharding', '@', 'gmail', '.', 'com'].join('');
+
+  function readReport() {
+    try { return localStorage.getItem(REPORT_KEY) || ''; } catch (e) { return ''; }
+  }
+  function writeReport(v) { try { localStorage.setItem(REPORT_KEY, v); } catch (e) {} }
+
+  function diagnostics() {
+    const L = [];
+    const add = (k, v) => L.push(k + ': ' + v);
+    add('app', VERSION);
+    try { add('page', location.href.split('?')[0]); } catch (e) {}
+    add('when', new Date().toISOString());
+    L.push('');
+    add('look', currentLook());
+    add('bursts', readBeatEffect());
+    add('reacts to', readDrive());
+    add('finger', readTouch());
+    add('background', readAmbient());
+    add('colours', readPalette() + (readPalette() === 'random' ? ' (rolled ' + eqPaletteNow + ')' : ''));
+    add('equalizer', readEqStyle() + (readEqStyle() === 'random' ? ' (rolled ' + eqShapeNow + ')' : ''));
+    add('sensitivity', readSens());
+    add('size', readPunch());
+    add('performance', readQuality());
+    add('on the stage', visuals);
+    add('player hidden', readHidePlayer());
+    L.push('');
+    add('listening', micLive);
+    add('listen on open', readMicAuto());
+    add('audio graph', !!(ctx && analyser && srcNode));
+    add('screen awake', !!wakeLock);
+    add('queue length', queue.length);          // a count, never the contents
+    add('saved links', readLinks().length);     // likewise
+    try {
+      const s = fx && fx.stats ? fx.stats() : null;
+      if (s) add('drawing', 'parts ' + s.parts + ', background ' + s.ambient + ', bolts ' + fbolts.length);
+    } catch (e) {}
+    L.push('');
+    try { add('screen', innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1)); } catch (e) {}
+    add('reduced motion', reducedMotion());
+    try { add('online', navigator.onLine); } catch (e) {}
+    try { add('installed', matchMedia('(display-mode: standalone)').matches); } catch (e) {}
+    try { add('secure context', window.isSecureContext === true); } catch (e) {}
+    try {
+      add('service worker', 'serviceWorker' in navigator
+        ? (navigator.serviceWorker.controller ? 'controlling' : 'registered, not controlling')
+        : 'unsupported');
+    } catch (e) {}
+    try { add('browser', navigator.userAgent); } catch (e) {}
+    return L.join('\n');
+  }
+
+  function reportBody() {
+    const said = ($('reportText').value || '').trim();
+    return (said || '(nothing written)') + '\n\n--- what the app can see ---\n' + diagnostics();
+  }
+  function reportSaid(msg, bad) {
+    const el = $('reportSaid');
+    el.textContent = msg || '';
+    el.hidden = !msg;
+    el.classList.toggle('bad', !!bad);
+  }
+  function paintDiag() { const el = $('reportDiag'); if (el) el.textContent = diagnostics(); }
+
+  // A mailto: URL is a URL, and some phones and mail apps quietly truncate or refuse a long one
+  // — quietly being the problem, since a report that arrives with its last paragraph missing
+  // looks like the person wrote less than they did. So the app trims it ITSELF and says so.
+  //
+  // WHAT STOPS BEING VISIBLE, since this is a threshold: past this length the email carries the
+  // first part of what was typed and a line saying it was cut. Nothing is lost silently, and
+  // Copy has no limit at all — which is what the message points at.
+  const MAILTO_MAX = 1800;
+  const TRIM_NOTE = '\n\n[...cut here to fit an email link. Use "Copy instead" in the app for '
+                  + 'the whole thing.]';
+
+  function sendReport() {
+    const subject = 'Hive Pocket ' + VERSION + ' — report';
+    const build = (body) => 'mailto:' + REPORT_TO
+      + '?subject=' + encodeURIComponent(subject)
+      + '&body=' + encodeURIComponent(body);
+    let body = reportBody();
+    let trimmed = false;
+    if (build(body).length > MAILTO_MAX) {
+      // The DIAGNOSTICS are kept whole and the typed text is what gives ground: the diagnostics
+      // are the part that cannot be typed out again from memory.
+      const parts = body.split('\n\n--- what the app can see ---\n');
+      const tail = '\n\n--- what the app can see ---\n' + (parts[1] || '');
+      const room = Math.max(120, MAILTO_MAX - build(tail).length - TRIM_NOTE.length - 40);
+      body = (parts[0] || '').slice(0, room) + TRIM_NOTE + tail;
+      trimmed = true;
+    }
+    // A phone with no mail app does nothing visible here and gives no error, so say what should
+    // have happened rather than leaving a button that looks broken.
+    try { location.href = build(body); } catch (e) {}
+    reportSaid('Your mail app should be opening with all of this in it. Nothing has been sent '
+             + 'yet — you press send there. If nothing opened, use Copy instead.'
+             + (trimmed ? ' What you wrote was long, so the email carries the start of it and '
+                        + 'says where it was cut — Copy has no limit.' : ''),
+             trimmed);
+  }
+
+  async function copyReport() {
+    const text = reportBody();
+    try {
+      await navigator.clipboard.writeText(text);
+      reportSaid('Copied. Paste it wherever you like — nothing left this phone on its own.');
+      return;
+    } catch (e) { /* denied, or no clipboard on this browser */ }
+    // The documented fallback, not a silent failure: select it so one long-press copies it.
+    try {
+      const el = $('reportDiag');
+      $('diagGrp').open = true;
+      el.textContent = text;
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      const s = window.getSelection();
+      s.removeAllRanges();
+      s.addRange(r);
+      reportSaid('This phone would not let the app use the clipboard, so the whole report is '
+               + 'selected below instead — copy it from there.', true);
+    } catch (e2) {
+      reportSaid('This phone would not let the app copy. Open the details below and copy the '
+               + 'text by hand.', true);
+    }
   }
 
   // ── Wiring ───────────────────────────────────────────────────────────────────────────
@@ -1370,6 +1518,16 @@
     // No applyRenderers(): this is Pocket's own detector, not renderer config. The next frame
     // out of pump() already reads the new value.
   });
+
+  $('reportText').addEventListener('input', () => {
+    writeReport($('reportText').value);
+    // The block is a live picture of the app, not a snapshot from when the sheet opened: a
+    // person describing a bug usually changes something while describing it.
+    paintDiag();
+  });
+  $('reportSend').addEventListener('click', sendReport);
+  $('reportCopy').addEventListener('click', copyReport);
+  $('reportGrp').addEventListener('toggle', () => { if ($('reportGrp').open) paintDiag(); });
 
   $('touchSel').addEventListener('change', () => {
     const v = TOUCH_MODES.includes($('touchSel').value) ? $('touchSel').value : 'both';
@@ -1735,6 +1893,8 @@
     get drive() { return { name: readDrive(), on: DRIVE[readDrive()] }; },
     get driveAvg() { return { mid: midAvg, high: highAvg }; },
     get touch() { return readTouch(); },
+    diagnostics,
+    reportBody,
     get bolts() { return fbolts.length; },
     strike,
     addLink,

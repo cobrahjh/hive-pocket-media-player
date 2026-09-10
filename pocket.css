@@ -97,6 +97,40 @@ html, body {
   font: inherit; font-weight: 600; cursor: pointer;
 }
 .linknote { margin: 0; font-size: 0.72rem; color: var(--muted); flex: 0 0 auto; }
+
+/* ── reporting a problem ── */
+#reportText {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--panel, #17150F);
+  color: var(--fg, #EDE7DC);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0.6rem;
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  resize: vertical;
+  min-height: 88px;
+}
+#reportText:focus { border-color: var(--hive); outline: none; }
+/* Wrapped, scrollable and monospace: this is the block the person is being asked to VET before
+   it leaves the phone, so it has to be readable rather than a smear that invites a blind tap. */
+.diag {
+  margin: 0.4rem 0 0;
+  padding: 0.6rem;
+  background: #0C0B0A;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.68rem;
+  line-height: 1.5;
+  color: var(--muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 40vh;
+  overflow: auto;
+}
 .linknote.bad { color: #E0655A; }
 
 /* ── stage: the two canvases stacked, effects over the equalizer ── */
