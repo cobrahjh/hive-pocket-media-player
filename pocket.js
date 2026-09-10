@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.7.0-beta';
+  const VERSION = '1.7.1-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -176,13 +176,37 @@
   }
   function writeBeatEffect(v) { try { localStorage.setItem(BEAT_KEY, v); } catch (e) {} }
 
+  // How much a moment has to beat the running average to count as a hit. The renderer defaults
+  // to 1.35, which is right for a clean file and wrong for a room: measured on Harold's phone
+  // with music playing out loud, the bass was four times over the loudness floor (0.57 against
+  // 0.12) and the biggest rise still only reached 1.1. Reverb smears the transients a file
+  // delivers intact, so the average sits close under every peak and 1.35 is never cleared.
+  // Hence a setting, and a default suited to a microphone rather than to a file.
+  //
+  // WHAT GOES AWAY AS THIS GETS EASIER: a burst stops meaning "a distinct beat". At 'easy' a
+  // sustained loud passage can keep it firing, because 6% over the average is a low bar. The
+  // rate is still bounded — the 0.12 floor rejects a quiet room outright, and the renderer's
+  // own tempo sync allows one burst every two detected beats — but the bursts stop being
+  // evidence that anything was actually hit.
+  const SENS_KEY = 'hive-pocket.sens';
+  const SENS = { easy: 1.06, room: 1.15, strict: 1.35 };
+  function readSens() {
+    try { const v = localStorage.getItem(SENS_KEY); return SENS[v] ? v : 'easy'; }
+    catch (e) { return 'easy'; }
+  }
+  function writeSens(v) { try { localStorage.setItem(SENS_KEY, v); } catch (e) {} }
+
   // ONE place that talks to the renderer's config, because setConfig REPLACES it: it merges what
   // you pass over the defaults, so a call carrying only `ambient` silently resets the burst
   // effect, and a call carrying only `beat` silently resets the weather. Every setting this app
   // owns goes in every call.
   function applyFx() {
+    BEAT_RISE = SENS[readSens()];   // so the readout tests the number actually in force
     if (!fx) return;
-    fx.setConfig({ ambient: readAmbient(), beat: { effect: readBeatEffect() } });
+    fx.setConfig({
+      ambient: readAmbient(),
+      beat: { effect: readBeatEffect(), sensitivity: SENS[readSens()] },
+    });
   }
   function readModes() {
     try {
@@ -255,7 +279,7 @@
   // Both must match fx-render.js pushBands(), and BOTH tests have to pass for a burst:
   // an absolute floor, and a rise over the renderer's own running average of the bass.
   const BEAT_FLOOR = 0.12;
-  const BEAT_RISE = 1.35;           // config.beat.sensitivity default
+  let BEAT_RISE = 1.35;             // kept in step with the chosen sensitivity
   let micBass = 0, micPeak = 0, micPeakAt = 0, micEverFired = false;
   let micAvg = 0, micRatio = 0, micRatioPeak = 0, micRatioAt = 0;
 
@@ -964,6 +988,7 @@
   function paintSheet() {
     $('ambientSel').value = readAmbient();
     $('beatSel').value = readBeatEffect();
+    $('sensSel').value = readSens();
     $('visualsSel').value = visuals;
     $('motionNote').hidden = !reducedMotion();
     const n = readLinks().length;
@@ -1007,6 +1032,11 @@
     queue = queue.filter((t) => !t.link);
     if (current >= queue.length) { teardown(); current = -1; paintPlay(); }
     renderQueue(); paintLib(); paintSheet();
+  });
+
+  $('sensSel').addEventListener('change', () => {
+    writeSens(SENS[$('sensSel').value] ? $('sensSel').value : 'easy');
+    applyFx();
   });
 
   $('beatSel').addEventListener('change', () => {
@@ -1120,6 +1150,7 @@
     get modes() { return { shuffle: shuffleOn, repeat: repeatMode }; },
     get ambient() { return readAmbient(); },
     get beatEffect() { return readBeatEffect(); },
+    get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
     addLink,
     removeAt,
     get queue() { return queue; },

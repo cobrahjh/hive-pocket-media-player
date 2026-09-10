@@ -196,6 +196,16 @@
       </select>
       <p class="set-note">Thrown on the bass, over the background below. Bursts need real volume:
         quiet room sound moves the equalizer but will not set these off.</p>
+
+      <label class="set-lab" for="sensSel">How easily it sets them off</label>
+      <select id="sensSel" title="How far above the running average a moment has to be to count as a hit">
+        <option value="easy">Easy — for a microphone in a room</option>
+        <option value="room">Middling</option>
+        <option value="strict">Strict — for a file playing in this app</option>
+      </select>
+      <p class="set-note">A room smears the sharp edges a file keeps, so what works for a track
+        playing here will never fire from across the room. The cost of Easy is honesty: a burst
+        stops meaning a distinct beat was hit, and a loud steady passage can keep it going.</p>
     </div>
 
     <div class="set">
