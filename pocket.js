@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.19.0-beta';
+  const VERSION = '1.20.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -338,6 +338,11 @@
   const DRIVE = {
     bass: { mid: false, high: false },
     mid:  { mid: true,  high: false },
+    // Added after Harold reported mids too chatty on real music: highs are the cheap, sparkly
+    // half and mids the busy one, so "everything except the busy one" has to be reachable
+    // without giving up the sparkle. A tuning change alone would have made that MY judgement
+    // of how much is too much, permanently, for him.
+    high: { mid: false, high: true },
     full: { mid: true,  high: true },
   };
   function readDrive() {
@@ -356,7 +361,7 @@
   // audible sits around 0.05 of full scale. The RISE over the running average is what actually
   // decides a hit here — the floor only keeps a silent room from firing.
   const MID_FLOOR = 0.055, HIGH_FLOOR = 0.04;
-  const MID_GAP = 260, HIGH_GAP = 150;   // ms; highs are allowed to be quicker, they are smaller
+  const MID_GAP = 420, HIGH_GAP = 150;   // ms; highs are allowed to be quicker, they are smaller
   // A RATIO ALONE IS NOT ENOUGH UP HERE, which the first build of this got wrong and a test
   // caught: mids fired 29 times in eight seconds — the minimum gap, and nothing else, was
   // limiting the rate, which means the detector was not discriminating at all. Mids and highs
@@ -372,9 +377,29 @@
   // envelopes: mids land about 2.5 a second, highs about 4.9 against 4 hats a second. Mids run
   // over because every percussive attack genuinely puts energy in the mid range; that is real,
   // not a defect, and Bass only turns it off.
-  const MID_RISE = 0.022, HIGH_RISE = 0.016;
+  const MID_RISE = 0.030, HIGH_RISE = 0.016;
   const MID_STRICT = 1.70, HIGH_STRICT = 1.80;
+  //
+  // A LOUDNESS TEST IS THE WRONG TEST FOR MIDS, which is what Harold reported after 1.19 and
+  // what the numbers had already been hinting: raising the strictness from 1.22 to 2.0 barely
+  // moved the rate (27 fires to 20), so loudness was never the thing letting them through.
+  // The reason is physical. Every percussive attack is broadband — a kick drum and a hi-hat
+  // both dump energy across the mid range on their transient — so a detector that asks only
+  // "are mids loud right now" answers yes on every drum hit in the track, and a burst that
+  // fires on every drum hit is not a mid detector at all, it is a second bass detector.
+  //
+  // So mids now have to be proportionally DOMINANT, not merely loud: their share of the whole
+  // frame's energy has to beat its own running average. A kick raises mids and everything else
+  // together and the share barely moves; a vocal or a guitar line raises mids while the rest
+  // stays put, and the share jumps. Highs keep the loudness test — a cymbal genuinely is a
+  // burst of high energy and has no equivalent confusion to resolve.
+  //
+  // WHAT STOPS BEING VISIBLE: mids no longer answer drum hits at all, so on a track that is
+  // mostly percussion the mid layer goes quiet. That is the point, but it means "nothing is
+  // firing mid-screen" is now a real and correct state rather than a fault to chase.
+  const MID_SHARE_STRICT = 1.22;
   let midAvg = 0, highAvg = 0, lastMidAt = 0, lastHighAt = 0;
+  let midShareAvg = 0;
 
   // Pocket's OWN bass detector, and the only reason it exists: the renderer's detector can fire
   // six effects and lightning is not one of them, so when lightning is chosen the renderer's beat
@@ -428,8 +453,16 @@
     midAvg = midAvg * 0.94 + m * 0.06;
     highAvg = highAvg * 0.94 + hi * 0.06;
 
+    // Mids as a fraction of the whole frame. `b` is the bass energy read above, so the whole
+    // span is measured once rather than twice.
+    const whole = bandEnergy(bands, 0, bands.length - 1);
+    const share = whole > 0 ? m / whole : 0;
+    const sWas = midShareAvg;
+    midShareAvg = midShareAvg * 0.94 + share * 0.06;
+
     if (d.mid && now - lastMidAt >= MID_GAP && m >= MID_FLOOR
-        && m >= mWas * sens * MID_STRICT && m - mWas >= MID_RISE) {
+        && m >= mWas * sens * MID_STRICT && m - mWas >= MID_RISE
+        && share >= sWas * MID_SHARE_STRICT) {
       lastMidAt = now;
       // Mid height, and never dead centre: the bass burst lands there, and two bursts stacked on
       // the same point read as one louder burst rather than as two different instruments.
