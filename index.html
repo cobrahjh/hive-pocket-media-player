@@ -199,6 +199,21 @@
     </div>
 
     <div class="set">
+      <label class="set-lab" for="eqSel">Equalizer</label>
+      <select id="eqSel" title="How the equalizer draws the sound">
+        <option value="bars">Bars</option>
+        <option value="led">LED</option>
+        <option value="blocks">Blocks</option>
+        <option value="wave">Wave</option>
+        <option value="line">Line</option>
+        <option value="dots">Dots</option>
+        <option value="radial">Radial</option>
+      </select>
+      <p class="set-note">Seven ways to draw the same sound. Visible whenever the equalizer is on
+        screen — see what fills the screen, below.</p>
+    </div>
+
+    <div class="set">
       <label class="set-lab" for="palSel">Colours</label>
       <select id="palSel" title="The palette for both the bursts and the background">
         <option value="hive">Hive orange</option>
@@ -208,7 +223,7 @@
         <option value="mono">Mono</option>
         <option value="random">Random</option>
       </select>
-      <p class="set-note">Colours the bursts and the background together.</p>
+      <p class="set-note">Colours the bursts, the background and the equalizer together. Random rolls the effects; the equalizer takes one real colour from the set, since it cannot roll.</p>
     </div>
 
     <div class="set">

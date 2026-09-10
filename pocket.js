@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.9.1-beta';
+  const VERSION = '1.10.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -207,6 +207,27 @@
   }
   function writePalette(v) { try { localStorage.setItem(PAL_KEY, v); } catch (e) {} }
 
+  // The equalizer's own styles. It has carried seven since long before this app, and Pocket
+  // never called its setConfig at all — so every build until now drew bars, in orange, whatever
+  // the effects were doing. Same shape of miss as the palettes and the beat effects.
+  const EQ_KEY = 'hive-pocket.eqstyle';
+  const EQ_STYLES = ['bars', 'led', 'blocks', 'wave', 'line', 'dots', 'radial'];
+  function readEqStyle() {
+    try { const v = localStorage.getItem(EQ_KEY); return EQ_STYLES.includes(v) ? v : 'bars'; }
+    catch (e) { return 'bars'; }
+  }
+  function writeEqStyle(v) { try { localStorage.setItem(EQ_KEY, v); } catch (e) {} }
+
+  // The equalizer does not know 'random' and quietly falls back to orange when handed a name it
+  // does not recognise, which would leave it stubbornly hive-coloured while the effects rolled.
+  // So random is resolved to a real palette here, once per apply — it changes when something
+  // else does rather than strobing frame to frame.
+  const CONCRETE = ['hive', 'fire', 'ice', 'vapor', 'mono'];
+  function eqPalette() {
+    const p = readPalette();
+    return p === 'random' ? CONCRETE[Math.floor(Math.random() * CONCRETE.length)] : p;
+  }
+
   // Looks. Four dropdowns is where good combinations go to die: the pleasure here is in
   // pairings, and nobody finds a pairing by working through a settings list. Each of these sets
   // all four at once. The dropdowns stay underneath for anyone who wants them, and the moment
@@ -214,19 +235,19 @@
   const LOOKS = {
     // Deliberately the app's shipped defaults, so a fresh install reads as Hive rather than
     // as Custom — "you have not chosen anything" is a poor first thing to say.
-    hive:    { effect: 'fireworks', palette: 'hive',  ambient: 'stars',    sens: 'easy' },
-    bonfire: { effect: 'embers',    palette: 'fire',  ambient: 'sparks',   sens: 'easy' },
-    freeze:  { effect: 'nova',      palette: 'ice',   ambient: 'snow',     sens: 'easy' },
-    drive:   { effect: 'confetti',  palette: 'vapor', ambient: 'meteors',  sens: 'easy' },
-    garden:  { effect: 'hearts',    palette: 'vapor', ambient: 'petals',   sens: 'easy' },
-    ink:     { effect: 'fountain',  palette: 'mono',  ambient: 'fog',      sens: 'room' },
-    storm:   { effect: 'fireworks', palette: 'ice',   ambient: 'storm',    sens: 'room' },
+    hive:    { eq: 'bars', effect: 'fireworks', palette: 'hive',  ambient: 'stars',    sens: 'easy' },
+    bonfire: { eq: 'blocks', effect: 'embers',    palette: 'fire',  ambient: 'sparks',   sens: 'easy' },
+    freeze:  { eq: 'line', effect: 'nova',      palette: 'ice',   ambient: 'snow',     sens: 'easy' },
+    drive:   { eq: 'wave', effect: 'confetti',  palette: 'vapor', ambient: 'meteors',  sens: 'easy' },
+    garden:  { eq: 'dots', effect: 'hearts',    palette: 'vapor', ambient: 'petals',   sens: 'easy' },
+    ink:     { eq: 'led', effect: 'fountain',  palette: 'mono',  ambient: 'fog',      sens: 'room' },
+    storm:   { eq: 'radial', effect: 'fireworks', palette: 'ice',   ambient: 'storm',    sens: 'room' },
   };
 
   function currentLook() {
-    const now = { effect: readBeatEffect(), palette: readPalette(), ambient: readAmbient(), sens: readSens() };
+    const now = { eq: readEqStyle(), effect: readBeatEffect(), palette: readPalette(), ambient: readAmbient(), sens: readSens() };
     for (const [name, l] of Object.entries(LOOKS)) {
-      if (l.effect === now.effect && l.palette === now.palette
+      if (l.eq === now.eq && l.effect === now.effect && l.palette === now.palette
           && l.ambient === now.ambient && l.sens === now.sens) return name;
     }
     return 'custom';
@@ -235,9 +256,9 @@
   function applyLook(name) {
     const l = LOOKS[name];
     if (!l) return;                       // 'custom' is a readout, never a thing to apply
-    writeBeatEffect(l.effect); writePalette(l.palette);
+    writeEqStyle(l.eq); writeBeatEffect(l.effect); writePalette(l.palette);
     writeAmbient(l.ambient); writeSens(l.sens);
-    applyFx();
+    applyRenderers();
     paintSheet();
   }
 
@@ -290,11 +311,12 @@
       : 'Pick some music and press play — the visuals follow the sound. Tap them for full screen.';
   }
 
-  // ONE place that talks to the renderer's config, because setConfig REPLACES it: it merges what
-  // you pass over the defaults, so a call carrying only `ambient` silently resets the burst
-  // effect, and a call carrying only `beat` silently resets the weather. Every setting this app
-  // owns goes in every call.
-  function applyFx() {
+  // ONE place that talks to BOTH renderers, because each one's setConfig REPLACES its config:
+  // they merge what you pass over their defaults, so a call carrying only `ambient` silently
+  // resets the burst effect, and a call carrying only `style` silently resets the equalizer's
+  // colour. Every setting this app owns goes in every call, to both.
+  function applyRenderers() {
+    if (eq) eq.setConfig({ style: readEqStyle(), palette: eqPalette() });
     if (!fx) return;
     fx.setConfig({
       ambient: readAmbient(),
@@ -532,7 +554,7 @@
     // means there is something to see from the first second, and the beat bursts land on top.
     // Stars by default, never storm or lightning: those flash, so they are only ever on
     // because someone picked them in Settings.
-    applyFx();
+    applyRenderers();
     eq.start();
     fx.start();
     applyVisuals(visuals);   // the canvases exist now, so the stored choice can take effect
@@ -1031,6 +1053,7 @@
     $('sensSel').value = readSens();
     $('hidePlayer').checked = readHidePlayer();
     $('palSel').value = readPalette();
+    $('eqSel').value = readEqStyle();
     paintLook();
     $('visualsSel').value = visuals;
     $('motionNote').hidden = !reducedMotion();
@@ -1062,7 +1085,7 @@
     paintLook();
     // Live: the renderer takes a new config without restarting, so the change is visible while
     // the sheet is still open rather than on the next track.
-    applyFx();
+    applyRenderers();
   });
   $('forgetLinks').addEventListener('click', () => {
     writeLinks([]);
@@ -1074,9 +1097,13 @@
   });
 
   $('lookSel').addEventListener('change', () => applyLook($('lookSel').value));
+  $('eqSel').addEventListener('change', () => {
+    writeEqStyle(EQ_STYLES.includes($('eqSel').value) ? $('eqSel').value : 'bars');
+    applyRenderers(); paintLook();
+  });
   $('palSel').addEventListener('change', () => {
     writePalette(PALETTES.includes($('palSel').value) ? $('palSel').value : 'hive');
-    applyFx(); paintLook();
+    applyRenderers(); paintLook();
   });
 
   $('hidePlayer').addEventListener('change', () => {
@@ -1086,13 +1113,13 @@
 
   $('sensSel').addEventListener('change', () => {
     writeSens(SENS[$('sensSel').value] ? $('sensSel').value : 'easy');
-    applyFx(); paintLook();
+    applyRenderers(); paintLook();
   });
 
   $('beatSel').addEventListener('change', () => {
     const v = BEAT_EFFECTS.includes($('beatSel').value) ? $('beatSel').value : 'fireworks';
     writeBeatEffect(v);
-    applyFx(); paintLook();
+    applyRenderers(); paintLook();
   });
 
   $('micBtn').addEventListener('click', () => { if (micLive) micStop(); else micStart(true); });
@@ -1201,6 +1228,7 @@
     get modes() { return { shuffle: shuffleOn, repeat: repeatMode }; },
     get ambient() { return readAmbient(); },
     get palette() { return readPalette(); },
+    get eqStyle() { return readEqStyle(); },
     get look() { return currentLook(); },
     get beatEffect() { return readBeatEffect(); },
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
