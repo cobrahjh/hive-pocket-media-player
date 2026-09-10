@@ -16,7 +16,7 @@
 // Kept in step with VERSION in pocket.js BY HAND — they are separate scripts and cannot
 // import from one another. Bump both together; the chip on screen is what a bug report will
 // quote, and a cache named after a different build is how a stale file survives a release.
-const VERSION = '1.13.0-beta';
+const VERSION = '1.14.0-beta';
 const CACHE = 'hive-pocket-' + VERSION;
 
 // The whole app. It is small on purpose, and every one of these must exist or install fails.
@@ -61,21 +61,42 @@ self.addEventListener('fetch', (event) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // CACHE FIRST, because the point is working with no network at all. A new version arrives
-  // through the worker update above, not by revalidating each file — which would put this app
-  // back to needing a network to start.
+  // NETWORK FIRST FOR APP CODE, cache first for everything else.
+  //
+  // This was cache-first for everything, and the reasoning looked sound: the point of the app is
+  // working with no network, and a new version arrives through the worker update rather than by
+  // revalidating each file. What it actually produced was a two-reload update. Load one is served
+  // entirely from the old cache; only THEN does the browser notice sw.js changed, install the new
+  // worker and swap the cache. So the page you are looking at is always the previous version, and
+  // "I reloaded and nothing changed" is the correct behaviour of that design rather than a fault
+  // anywhere else. Every "reload and try it" in this project has quietly meant reload twice.
+  //
+  // Network first costs nothing that matters. The cache is still filled on every response, so
+  // offline is unchanged: no network means the fetch rejects and the cached copy is served, which
+  // is exactly what cache-first would have done. Online it just means the code you get is the
+  // code that is published.
+  const isCode = req.mode === 'navigate'
+    || /\.(?:html|js|css|json)$/i.test(url.pathname)
+    || url.pathname === '/' || url.pathname.endsWith('/');
+
+  const keep = (res) => {
+    // Cache what we fetched, so a page reached by a path not in SHELL still works offline next
+    // time. Only same-origin, only successful, basic responses.
+    if (res && res.ok && res.type === 'basic') {
+      const copy = res.clone();
+      caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+    }
+    return res;
+  };
+
+  const offline = () =>
+    // Offline and not cached. For a page load, hand back the app rather than a browser error.
+    caches.match(req).then((hit) => hit
+      || (req.mode === 'navigate' ? caches.match('index.html') : Response.error()));
+
   event.respondWith(
-    caches.match(req).then((hit) => hit || fetch(req).then((res) => {
-      // Cache what we fetched, so a page reached by a path not in SHELL still works offline
-      // next time. Only same-origin, only successful, basic responses.
-      if (res && res.ok && res.type === 'basic') {
-        const copy = res.clone();
-        caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-      }
-      return res;
-    }).catch(() =>
-      // Offline and not cached. For a page load, hand back the app rather than a browser error.
-      req.mode === 'navigate' ? caches.match('index.html') : Response.error()
-    ))
+    isCode
+      ? fetch(req).then(keep).catch(offline)
+      : caches.match(req).then((hit) => hit || fetch(req).then(keep).catch(offline))
   );
 });

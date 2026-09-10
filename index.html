@@ -315,6 +315,20 @@
     <h3 class="sheet-sec">App</h3>
 
     <div class="set">
+      <label class="set-lab" for="qualSel">Performance</label>
+      <select id="qualSel" title="How hard the visuals work, and what they cost the battery">
+        <option value="full">Full</option>
+        <option value="balanced">Balanced</option>
+        <option value="saver">Battery saver</option>
+      </select>
+      <p class="set-note">Bursts throw fewer pieces and the background carries fewer as this comes
+        down, and Battery saver also redraws the equalizer 24 times a second instead of 60 —
+        visibly less fluid on a fast track. Nothing is removed and no effect becomes unavailable.
+        Full costs about 12% of a battery an hour with the microphone on; what the other two save
+        against that has not been measured.</p>
+    </div>
+
+    <div class="set">
       <span class="set-lab">Player</span>
       <label class="mic-auto" for="hidePlayer">
         <input type="checkbox" id="hidePlayer">

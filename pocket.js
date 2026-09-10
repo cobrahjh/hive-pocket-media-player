@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.13.0-beta';
+  const VERSION = '1.14.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -288,6 +288,29 @@
     paintSheet();
   }
 
+  // How hard it works. Every number here is a lever the renderers already had: the effects take
+  // a budget for burst particles and a separate one for the weather, and the equalizer takes a
+  // frame cap per surface — its own comment says "the phone wanting 30 is the normal case".
+  //
+  // WHAT STOPS BEING VISIBLE AS THIS COMES DOWN, since it is a threshold and thresholds hide
+  // things: bursts throw fewer pieces and the background carries fewer, so both thin out rather
+  // than disappear; and at Saver the equalizer redraws at 24 a second, which is visibly less
+  // fluid on a fast track. Nothing is removed and no effect becomes unavailable.
+  //
+  // The saving is NOT measured. Full was measured at about 12% of a battery an hour on Harold's
+  // phone, screen and all; what these save against that is unknown until someone runs them.
+  const QUAL_KEY = 'hive-pocket.quality';
+  const QUALITY = {
+    full:     { fps: 60, parts: 1200, amb: 400 },
+    balanced: { fps: 40, parts: 700,  amb: 250 },
+    saver:    { fps: 24, parts: 300,  amb: 120 },
+  };
+  function readQuality() {
+    try { const v = localStorage.getItem(QUAL_KEY); return QUALITY[v] ? v : 'full'; }
+    catch (e) { return 'full'; }
+  }
+  function writeQuality(v) { try { localStorage.setItem(QUAL_KEY, v); } catch (e) {} }
+
   // Hiding the player, not removing it. With the microphone able to see sound this app does not
   // own, the visuals stand on their own and the transport is often just something in the way.
   // Everything stays wired: turn this off and the queue, the saved links and the controls are
@@ -343,11 +366,19 @@
   // colour. Every setting this app owns goes in every call, to both.
   function applyRenderers() {
     rollEq();
-    if (eq) eq.setConfig({ style: eqShapeNow, palette: eqPaletteNow });
+    const q = QUALITY[readQuality()];
+    if (eq) {
+      eq.setConfig({ style: eqShapeNow, palette: eqPaletteNow });
+      // Per SURFACE, deliberately not part of the saved config — the renderer keeps frame rate
+      // out of setConfig for exactly this reason, so it is set separately every time.
+      if (eq.setFps) eq.setFps(q.fps);
+    }
     if (!fx) return;
     fx.setConfig({
       ambient: readAmbient(),
       palette: readPalette(),
+      particleCap: q.parts,
+      ambientCap: q.amb,
       beat: { effect: readBeatEffect(), sensitivity: SENS[readSens()] },
     });
   }
@@ -1117,6 +1148,7 @@
     $('beatSel').value = readBeatEffect();
     $('sensSel').value = readSens();
     $('hidePlayer').checked = readHidePlayer();
+    $('qualSel').value = readQuality();
     $('palSel').value = readPalette();
     $('eqSel').value = readEqStyle();
     paintLook();
@@ -1170,6 +1202,11 @@
   $('palSel').addEventListener('change', () => {
     writePalette(PALETTES.includes($('palSel').value) ? $('palSel').value : 'hive');
     applyRenderers(); paintLook();
+  });
+
+  $('qualSel').addEventListener('change', () => {
+    writeQuality(QUALITY[$('qualSel').value] ? $('qualSel').value : 'full');
+    applyRenderers();
   });
 
   $('hidePlayer').addEventListener('change', () => {
@@ -1301,6 +1338,7 @@
     get beatEffect() { return readBeatEffect(); },
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
     get playerHidden() { return readHidePlayer(); },
+    get quality() { return { name: readQuality(), caps: QUALITY[readQuality()] }; },
     addLink,
     removeAt,
     get queue() { return queue; },
