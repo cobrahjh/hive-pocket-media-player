@@ -371,3 +371,32 @@ html, body {
   border: 1px solid var(--line); min-height: 44px;
 }
 .sheet-btn.ghost:hover { border-color: var(--hive); }
+
+/* Four header buttons is one more than this bar was laid out for, and at 320px the page began to
+   scroll SIDEWAYS — the same class of fault as "the FX studio has no presets on my phone", which
+   was also a row that could not shrink. Measured at 320, 360, 390 and 412 with the player both
+   shown and hidden.
+
+   What gives, in order: the gaps and the outer padding first, then the one line of subtitle,
+   which repeats what the queue underneath already says. The version chip is NOT dropped and the
+   buttons are NOT shrunk — the chip is how a bug report says which build it came from, and 44px
+   is the floor everywhere. */
+@media (max-width: 380px) {
+  .bar { gap: 0.4rem; }
+  .app { padding-left: 0.5rem; padding-right: 0.5rem; }
+  .icon-btn { min-width: 40px; }
+}
+@media (max-width: 340px) {
+  .sub { display: none; }
+}
+
+/* The transport at 320px, which overflowed by 2px LONG BEFORE the header gained a button — six
+   controls that will not shrink below 44, a play button wider still, and five gaps between them
+   come to more than the screen. Found by walking every element for a right edge past the viewport
+   rather than by looking, because two pixels of sideways scroll is invisible until you try to
+   swipe the queue and the whole page slides.
+   It WRAPS rather than shrinking: a button pressed by someone whose hands shake does not get
+   smaller to save a row. */
+@media (max-width: 380px) {
+  .controls { gap: 0.5rem; flex-wrap: wrap; row-gap: 0.5rem; }
+}

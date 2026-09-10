@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.14.0-beta';
+  const VERSION = '1.15.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1195,6 +1195,22 @@
 
   $('lookSel').addEventListener('change', () => applyLook($('lookSel').value));
   $('surpriseBtn').addEventListener('click', surprise);
+  // The same action from the header. It flashes what it landed on, because a roll that changes
+  // the picture with no word for what it did leaves you unable to ask for it again.
+  $('rollBtn').addEventListener('click', () => { surprise(); sayRoll(); });
+
+  // Names what was just rolled, on the stage, briefly. Uses the existing hint element rather than
+  // adding a second overlay: it is already the one thing on the stage that speaks.
+  let rollTimer = 0;
+  function sayRoll() {
+    const el = $('stageHint');
+    if (!el) return;
+    el.hidden = false;
+    el.textContent = readBeatEffect() + ' · ' + readPalette() + ' · ' + readEqStyle()
+      + (readAmbient() === 'off' ? '' : ' · ' + readAmbient());
+    clearTimeout(rollTimer);
+    rollTimer = setTimeout(paintStageHint, 1800);
+  }
   $('eqSel').addEventListener('change', () => {
     writeEqStyle(EQ_STYLES.includes($('eqSel').value) ? $('eqSel').value : 'bars');
     applyRenderers(); paintLook();
