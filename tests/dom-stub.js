@@ -84,6 +84,8 @@ function el(id) {
  *   opts.refuseFullscreen  the API exists and rejects, which is what a browser does when it
  *                       does not believe a gesture happened
  *   opts.reducedMotion  what matchMedia reports
+ *   opts.brokenRenderer the equalizer throws when configured, the way a renderer that cannot
+ *                       start does — the case whose silence cost a release to find
  *   opts.youtube        'ok' (default) the player script arrives and works, 'blocked' it fails
  *                       to load the way it does with no connection
  */
@@ -235,15 +237,41 @@ function boot(opts) {
     },
     // Counted, not drawn: whether a renderer was told to re-measure after the stage changed
     // size is exactly the thing that is invisible in a screenshot and easy to forget in code.
-    EqRender: { create: () => ({ push: noop, start: noop, stop: noop, resize: () => resizes.eq++ }) },
+    // THESE FAKES HAVE TO CARRY EVERY METHOD THE APP CALLS, and the reason is not tidiness.
+    // EqRender's fake was missing setConfig, which pocket.js has called since 1.10.0. The app
+    // threw on it inside started(), a `.catch(() => {})` two frames up swallowed the throw, and
+    // the suite reported it as "the tap clears the stale prompt" failing — a message pointing at
+    // a subtitle, three layers away from a missing stub method. A fake that is a subset of the
+    // real thing does not make the suite weaker in an obvious place; it makes it wrong in a
+    // confusing one. Anything added to a renderer and called from here belongs in this list.
+    EqRender: {
+      create: () => ({
+        push: noop, start: noop, stop: noop, setFps: noop,
+        // opts.brokenRenderer makes this throw, which is how a renderer that cannot start on a
+        // real phone behaves. It exists because that failure used to be swallowed whole.
+        setConfig: () => { if (o.brokenRenderer) throw new Error('renderer refused'); },
+        resize: () => resizes.eq++,
+      }),
+    },
     FxRender: {
       create: () => ({
-        setConfig: noop, pushBands: noop, start: noop, stop: noop, resize: () => resizes.fx++,
+        setConfig: noop, pushBands: noop, start: noop, stop: noop, say: noop,
+        setPlayerUp: noop, isAudioLive: () => false, getBpm: () => ({ bpm: null }),
+        fire: () => fires.push([].slice.call(arguments)),
+        stats: () => ({ parts: 0, ambient: 0, shells: 0, bolts: 0 }),
+        getConfig: () => ({ beat: { intensity: 1, effect: 'fireworks', enabled: true },
+                            effects: {}, particleCap: 0 }),
+        resize: () => resizes.fx++,
       }),
+      // Module-level exports, used by Pocket's own bolt layer rather than by an instance.
+      boltPath: (x0, y0, x1, y1) => [[x0, y0], [x1, y1]],
+      sample: () => [255, 255, 255],
+      stopsFor: () => [[0, [255, 255, 255]], [1, [255, 255, 255]]],
     },
     document: doc,
   };
   const resizes = { eq: 0, fx: 0 };
+  const fires = [];
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);

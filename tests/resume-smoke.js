@@ -60,12 +60,27 @@ async function pickAndPlay(app) {
   check('an allowed play builds the graph too', clean.pocket.graphReady === true);
   check('an allowed play is not called twice', clean.playCalls() === 1, String(clean.playCalls()));
 
+  // ── 3b. a renderer that cannot start must not take the rest of the app with it ───────────
+  // Found by chasing this suite's own failure. started() ran inside `.then(started).catch(...)`,
+  // so a throw from initVisuals() was swallowed by a catch written to absorb a REFUSED PLAY:
+  // the sound played, the graph existed, and the subtitle still read "tap play to start" with
+  // nothing anywhere saying the visuals had died. Sound is the thing that must survive.
+  const bad = boot({ brokenRenderer: true });
+  await pickAndPlay(bad);
+  check('a dead renderer still plays', bad.media.paused === false);
+  check('a dead renderer still builds the graph', bad.pocket.graphReady === true);
+  const badNote = bad.els('nowSub').textContent;
+  check('a dead renderer SAYS SO', /visuals could not start/.test(badNote), badNote);
+  check('a dead renderer does not blame the phone', !/Tap play to start/.test(badNote), badNote);
+
   // ── 4. this suite must be able to fail ───────────────────────────────────────────────────
   // Cut the fix out and require case 2 to collapse. Without this, the whole file could be
   // asserting something that is true of the broken build as well, and nobody would know.
-  const brokenSrc = SRC.replace('audio.play().then(started).catch(() => {});',
+  const brokenSrc = SRC.replace('audio.play().then(started, () => {});',
                                 'audio.play().catch(() => {});');
-  check('the mutation applied', brokenSrc !== SRC);
+  check('the mutation applied', brokenSrc !== SRC,
+    'the line this suite mutates has been reworded in pocket.js - update the string, do not '
+    + 'delete the case, or every assertion above stops proving anything');
   const broken = boot({ src: brokenSrc, blockFirstPlay: true });
   await pickAndPlay(broken);
   fire(broken.els('playBtn'), 'click');

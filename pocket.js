@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.20.0-beta';
+  const VERSION = '1.21.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1082,7 +1082,10 @@
     $('stageHint').hidden = true;
     renderQueue();
     // The graph is built on a real gesture-driven play, which is when a phone will allow it.
-    el.play().then(started).catch(() => {
+    // Two-argument form, deliberately: with a trailing .catch, a throw inside started() would
+    // land here and write "tap play to start" over music that was already playing — the app
+    // blaming the phone for its own fault. This branch is now reachable only by a real refusal.
+    el.play().then(started, () => {
       $('nowSub').textContent = TAP_NOTE;
       paintPlay();
     });
@@ -1094,16 +1097,42 @@
   // that follows it. Hanging it on play() alone left a blocked first track playing with a
   // dead stage for the rest of the session, because the resume path never built the graph.
   function started() {
-    if (audio && ensureGraph(audio)) { initVisuals(); startPump(); }
+    // THE VISUALS GET THEIR OWN try, and this is not defensive noise — it is a bug that was
+    // caught by chasing a test failure and would have looked identical on a real phone.
+    //
+    // toggle() calls this through `.then(started).catch(() => {})`. An empty catch on a promise
+    // whose handler does real work does not guard the play() call, it swallows EVERYTHING the
+    // handler throws. So when initVisuals() threw, the graph was built, the sound played, and
+    // then this function stopped dead: the stale "tap play" prompt was never cleared, the media
+    // session was never set, and nothing anywhere said why. Sound with no visuals and a lying
+    // subtitle, in silence — the exact shape of failure this app keeps having to design against.
+    //
+    // Splitting it means a renderer that cannot start costs the renderer and nothing else, and
+    // SAYS SO on the stage rather than leaving a wrong message standing.
+    let visualsFailed = null;
+    try {
+      if (audio && ensureGraph(audio)) { initVisuals(); startPump(); }
+    } catch (e) {
+      visualsFailed = e;
+    }
     // The tap happened. Leave any other note alone — a link playing without visuals has its
     // own, and that one is still true.
     if ($('nowSub').textContent === TAP_NOTE) $('nowSub').textContent = 'From this device';
+    if (visualsFailed) {
+      $('nowSub').textContent = 'Playing, but the visuals could not start on this phone. '
+        + 'The sound is fine; the equalizer and effects are not running.';
+    }
     paintMediaSession();
   }
 
   function toggle() {
     if (!audio || current < 0) { if (queue.length) play(0); return; }
-    if (audio.paused) audio.play().then(started).catch(() => {});
+    // .then(started, onRefused) and NOT .then(started).catch(onRefused). The two read the same
+    // and are not: a trailing .catch also catches whatever `started` throws, so a renderer that
+    // failed came back looking exactly like a phone refusing to play. The two-argument form
+    // handles the refusal ONLY, and leaves a real fault in started() to surface as an unhandled
+    // rejection instead of vanishing. See the note in started().
+    if (audio.paused) audio.play().then(started, () => {});
     else audio.pause();
   }
   // fromEnd: a track that ran out, as opposed to the button. Only the former stops at the end
