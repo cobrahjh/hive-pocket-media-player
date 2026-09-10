@@ -363,3 +363,11 @@ html, body {
    sheet's flex children, and everything inside a group is a child of the group instead. Without
    this, a note ran straight into the next label with nothing between them. */
 .grp > .set + .set, .grp > .set + ul, .grp > .set + p { margin-top: 1.1rem; }
+
+/* A secondary action inside the sheet: it does something, but it is not the thing you came for,
+   so it does not get the solid hive fill that Done and the microphone button use. */
+.sheet-btn.ghost {
+  background: none; color: var(--hive);
+  border: 1px solid var(--line); min-height: 44px;
+}
+.sheet-btn.ghost:hover { border-color: var(--hive); }

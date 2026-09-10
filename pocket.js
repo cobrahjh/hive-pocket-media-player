@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.12.0-beta';
+  const VERSION = '1.13.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -211,21 +211,47 @@
   // never called its setConfig at all — so every build until now drew bars, in orange, whatever
   // the effects were doing. Same shape of miss as the palettes and the beat effects.
   const EQ_KEY = 'hive-pocket.eqstyle';
-  const EQ_STYLES = ['bars', 'led', 'blocks', 'wave', 'line', 'dots', 'radial'];
+  const EQ_SHAPES = ['bars', 'led', 'blocks', 'wave', 'line', 'dots', 'radial'];
+  const EQ_STYLES = EQ_SHAPES.concat('random');
   function readEqStyle() {
     try { const v = localStorage.getItem(EQ_KEY); return EQ_STYLES.includes(v) ? v : 'bars'; }
     catch (e) { return 'bars'; }
   }
   function writeEqStyle(v) { try { localStorage.setItem(EQ_KEY, v); } catch (e) {} }
 
-  // The equalizer does not know 'random' and quietly falls back to orange when handed a name it
-  // does not recognise, which would leave it stubbornly hive-coloured while the effects rolled.
-  // So random is resolved to a real palette here, once per apply — it changes when something
-  // else does rather than strobing frame to frame.
   const CONCRETE = ['hive', 'fire', 'ice', 'vapor', 'mono'];
-  function eqPalette() {
-    const p = readPalette();
-    return p === 'random' ? CONCRETE[Math.floor(Math.random() * CONCRETE.length)] : p;
+  const pick = (list) => list[Math.floor(Math.random() * list.length)];
+
+  // The equalizer cannot roll the way the effects do. An effect rolls per burst, which is a new
+  // thing every second or so; a style that rolled per frame would be a strobe of seven layouts
+  // and unreadable. So random means "pick one for me", rolled once when something is applied and
+  // then REMEMBERED here — a resolver that rolled on every call would mean simply reading what
+  // the equalizer is currently drawing changed it, which is not a thing a read should do.
+  let eqShapeNow = null, eqPaletteNow = null;
+  function rollEq() {
+    const st = readEqStyle(), pl = readPalette();
+    eqShapeNow = st === 'random' ? pick(EQ_SHAPES) : st;
+    // The equalizer does not know 'random' and quietly falls back to orange when handed a name it
+    // does not recognise, so it is resolved to a real one here rather than left to fail silently.
+    eqPaletteNow = pl === 'random' ? pick(CONCRETE) : pl;
+  }
+
+  // Roll everything. Deliberately NOT a look: a look is a state you can come back to, and this is
+  // an action whose result is whatever it landed on, so the picker reports Custom (or a real look,
+  // if the dice happen to agree) rather than sitting on a name that describes nothing.
+  //
+  // Storm and lightning are excluded on purpose. They flash the screen, and the renderer's own
+  // policy is that flashing is allowed when chosen by name and never when rolled — nobody
+  // consented to it by pressing a button labelled Surprise me. Same reasoning, one layer up.
+  const SAFE_AMBIENTS = AMBIENTS.filter((a) => a !== 'storm' && a !== 'lightning');
+  function surprise() {
+    writeEqStyle(pick(EQ_SHAPES));
+    writeBeatEffect(pick(BEAT_EFFECTS.filter((e) => e !== 'random')));
+    writePalette(pick(CONCRETE));
+    writeAmbient(pick(SAFE_AMBIENTS));
+    writeSens(pick(Object.keys(SENS)));
+    applyRenderers();
+    paintSheet();
   }
 
   // Looks. Four dropdowns is where good combinations go to die: the pleasure here is in
@@ -316,7 +342,8 @@
   // resets the burst effect, and a call carrying only `style` silently resets the equalizer's
   // colour. Every setting this app owns goes in every call, to both.
   function applyRenderers() {
-    if (eq) eq.setConfig({ style: readEqStyle(), palette: eqPalette() });
+    rollEq();
+    if (eq) eq.setConfig({ style: eqShapeNow, palette: eqPaletteNow });
     if (!fx) return;
     fx.setConfig({
       ambient: readAmbient(),
@@ -1135,6 +1162,7 @@
   });
 
   $('lookSel').addEventListener('change', () => applyLook($('lookSel').value));
+  $('surpriseBtn').addEventListener('click', surprise);
   $('eqSel').addEventListener('change', () => {
     writeEqStyle(EQ_STYLES.includes($('eqSel').value) ? $('eqSel').value : 'bars');
     applyRenderers(); paintLook();
@@ -1267,6 +1295,8 @@
     get ambient() { return readAmbient(); },
     get palette() { return readPalette(); },
     get eqStyle() { return readEqStyle(); },
+    get eqShape() { return eqShapeNow; },
+    surprise,
     get look() { return currentLook(); },
     get beatEffect() { return readBeatEffect(); },
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
