@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.42.0-beta';
+  const VERSION = '1.43.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2744,13 +2744,22 @@
       f.a += (Math.sin(f.t * f.w1) + Math.sin(f.t * f.w2) * 0.6) * f.amp * dt;
       f.x += Math.cos(f.a) * f.sp * dt;
       f.y += Math.sin(f.a) * f.sp * dt;
-      // Turn at the edges rather than wrapping: a fairy that reappears on the other side reads
-      // as two fairies, and rather than as one thing moving.
-      const m = 6;
-      if (f.x < m) { f.x = m; f.a = Math.PI - f.a; }
-      if (f.x > boltW - m) { f.x = boltW - m; f.a = Math.PI - f.a; }
-      if (f.y < m) { f.y = m; f.a = -f.a; }
-      if (f.y > boltH - m) { f.y = boltH - m; f.a = -f.a; }
+      // WRAP RATHER THAN BOUNCE, at Harold's word. The original reasoning was that a light
+      // reappearing on the far side reads as two lights rather than as one thing moving — true
+      // of a dot, and no longer true once it drags three seconds of tail: the tail follows it
+      // through the wrap and out the other side, which is what tells you it is the same wisp.
+      // Bouncing also made every edge a hard corner in a path whose whole appeal is the curve.
+      //
+      // THE TRAIL HAS TO BREAK WITH IT. Without the break the next segment joins the old edge to
+      // the new one and draws a line straight back across the screen — the classic wrap artifact,
+      // and at this tail length it would be the most visible thing on the stage.
+      const pad = 4;
+      let jumped = false;
+      if (f.x < -pad) { f.x += boltW + pad * 2; jumped = true; }
+      else if (f.x > boltW + pad) { f.x -= boltW + pad * 2; jumped = true; }
+      if (f.y < -pad) { f.y += boltH + pad * 2; jumped = true; }
+      else if (f.y > boltH + pad) { f.y -= boltH + pad * 2; jumped = true; }
+      if (jumped) f.trail.push(NaN, NaN);      // a break the renderer lifts the pen at
       f.trail.push(f.x, f.y);
       if (f.trail.length > FAIRY_TRAIL * 2) f.trail.splice(0, f.trail.length - FAIRY_TRAIL * 2);
       // THE GAP WIDENS WITH THE CROWD, and this is the number that makes thirty seconds
@@ -2802,9 +2811,16 @@
         // all the way back — which is what reads as a wisp rather than a comet.
         boltCtx.globalAlpha = 0.62 * k * t;
         boltCtx.lineWidth = Math.max(0.4, 3.2 * k * k + 0.4);
+        // The pen lifts at a NaN and comes back down on the next real point, so a wrap leaves a
+        // clean end and a clean start rather than a chord across the whole screen.
         boltCtx.beginPath();
-        boltCtx.moveTo(f.trail[lo * 2], f.trail[lo * 2 + 1]);
-        for (let i = lo + 1; i < hi; i++) boltCtx.lineTo(f.trail[i * 2], f.trail[i * 2 + 1]);
+        let penDown = false;
+        for (let i = lo; i < hi; i++) {
+          const px = f.trail[i * 2], py = f.trail[i * 2 + 1];
+          if (!isFinite(px) || !isFinite(py)) { penDown = false; continue; }
+          if (penDown) boltCtx.lineTo(px, py);
+          else { boltCtx.moveTo(px, py); penDown = true; }
+        }
         boltCtx.stroke();
       }
       const core = Math.max(3, boltH * 0.008);
@@ -3063,6 +3079,10 @@
     get fairies() { return fairies.length; },
     get fairyRoamCount() { return fairies.filter((f) => f.roam).length; },
     get fairyTrail() { return fairies.map((f) => f.trail.length / 2); },
+    get fairyTrailRaw() { return fairies.map((f) => f.trail.slice()); },
+    get fairyInBounds() {
+      return fairies.every((f) => f.x >= -8 && f.x <= boltW + 8 && f.y >= -8 && f.y <= boltH + 8);
+    },
     get promptWarning() { return promptWarning; },
     spawnFairy,
     strike,
