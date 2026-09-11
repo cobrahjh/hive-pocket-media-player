@@ -117,7 +117,7 @@
   <div class="reconnect" id="reconnectBar" hidden>
     <button class="reconnect-btn" id="reconnectBtn" type="button"
             title="Reopen the music folder this app remembered">Reconnect your music</button>
-    <p class="reconnect-note">Choose <b>Allow on every visit</b> and it stops asking.</p>
+    <p class="reconnect-note">If Chrome offers <b>Allow on every visit</b>, take it.</p>
   </div>
 
   <!-- Adding a link. Hidden until asked for, because most sessions are picked files. -->
@@ -469,9 +469,13 @@
         files unasked — so when the browser wants permission again you get one tap rather than
         the whole picker. It reads up to 500 tracks and three folders deep, and says so when a
         folder is bigger than that.</p>
-      <p class="set-note"><b>To stop being asked at all:</b> when Chrome shows the permission
-        prompt it offers three answers, and the middle one, <em>Allow on every visit</em>, is the
-        one that sticks. The default only covers this visit, which is why it asks again.</p>
+      <p class="set-note"><b>If it keeps asking:</b> Chrome's permission prompt sometimes offers
+        three answers, and the middle one, <em>Allow on every visit</em>, is the one meant to
+        stick — the default covers only that visit. Chrome also documents that an installed app
+        should keep the permission with no prompt at all. On some phones it asks every time
+        regardless; that is the browser's decision and nothing in this app can override it. If
+        yours keeps asking, a bug report from below now carries exactly what the browser
+        answered, which is the only way to tell the two apart.</p>
       <div id="installRow" hidden>
         <p class="set-note">Installing this app to your home screen makes that permanent —
           Chrome keeps folder permission for an installed app without asking again. It also opens

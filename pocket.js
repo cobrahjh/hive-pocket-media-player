@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.28.0-beta';
+  const VERSION = '1.29.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1428,6 +1428,15 @@
   }
 
   let folderHandle = null;
+  // THE FACTS A REPORT NEEDS about a folder that will not stay connected, and the reason they
+  // are recorded rather than asked for on demand: what matters is what the browser said ON
+  // LOAD, before anything was tapped, and by the time anyone opens the menu to report it that
+  // moment is gone. Chrome documents that an installed app keeps file permission without
+  // asking again; Harold's does not, and nothing in this app could say whether the handle came
+  // back, what the browser answered, or whether it even considers itself installed.
+  let folderFound = null;      // was a handle in storage at all
+  let folderStateAtLoad = null;
+  let folderStateAfterAsk = null;
 
   async function handleState(h) {
     if (!h || !h.queryPermission) return 'unsupported';
@@ -1525,10 +1534,12 @@
   async function resumeFolder() {
     if (!canRemember()) return;
     let h = null;
-    try { h = await idbGet(DB_KEY); } catch (e) { return; }
+    try { h = await idbGet(DB_KEY); } catch (e) { folderFound = 'error'; return; }
+    folderFound = !!h;
     if (!h) return;
     folderHandle = h;
     const state = await handleState(h);
+    folderStateAtLoad = state;
     paintFolder();
     if (state === 'granted') { await loadFolder(h); return; }
     if (state === 'denied') { folderNote('Your music folder is remembered, but this browser is '
@@ -1538,15 +1549,20 @@
     // only. The app knew a tap was needed and said so, and said nothing about the choice inside
     // that tap, which is the whole difference between one tap now and one tap forever. Naming
     // the button in the browser's own prompt is not clutter; it is the instruction.
-    folderNote('Your music folder is remembered — one tap reconnects it. Chrome will ask: choose '
-             + '"Allow on every visit" and it stops asking.'
-             + (installed() ? '' : ' Adding this app to your home screen makes it permanent.'));
+    // WORDED FOR WHAT IS TRUE rather than for what Chrome documents. Chrome's own guidance says
+    // an installed app keeps file permission without asking again; on Harold's phone it asks
+    // every time anyway. Promising "it stops asking" to someone it keeps asking is worse than
+    // saying nothing, so the promise is gone and the option is named as something to try.
+    folderNote('Your music folder is remembered — one tap brings it back. If Chrome offers '
+             + '"Allow on every visit", taking it may stop the asking; some phones ask every '
+             + 'time regardless, and that is the browser rather than this app.');
   }
 
   async function reconnectFolder() {
     if (!folderHandle) return;
     let ok = 'denied';
     try { ok = await folderHandle.requestPermission({ mode: 'read' }); } catch (e) {}
+    folderStateAfterAsk = ok;
     if (ok === 'granted') askPersist();
     if (ok !== 'granted') { folderNote('This browser would not reconnect that folder. Choose it '
       + 'again to start over.', true); return; }
@@ -1751,6 +1767,9 @@
     add('saved links', readLinks().length);     // likewise
     add('can remember a folder', canRemember());
     add('folder remembered', !!folderHandle);   // whether, never which
+    add('folder handle in storage', folderFound === null ? 'not looked' : folderFound);
+    add('folder permission on load', folderStateAtLoad || 'not checked');
+    add('folder permission after asking', folderStateAfterAsk || 'not asked');
     // A value tracked when it is learned rather than fetched here: diagnostics() is called from
     // a keystroke handler and must stay synchronous, and a promise resolving into a block that
     // has already been rendered is how a diagnostic starts lying.
@@ -2493,6 +2512,9 @@
     get tutorialSeen() { return tutSeen(); },
     get canRemember() { return canRemember(); },
     get folderRemembered() { return !!folderHandle; },
+    get folderDiag() {
+      return { found: folderFound, onLoad: folderStateAtLoad, afterAsk: folderStateAfterAsk };
+    },
     get installed() { return installed(); },
     get canInstall() { return !!installEvent; },
     pickFolder, reconnectFolder, forgetFolder, resumeFolder,
