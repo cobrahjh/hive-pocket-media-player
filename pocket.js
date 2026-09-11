@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.36.0-beta';
+  const VERSION = '1.37.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1760,8 +1760,9 @@
     folderStateAtLoad = state;
     paintFolder();
     if (state === 'granted') { await loadFolder(h); return; }
-    // Locked, not lost. The names come back now and the files come back on the tap.
+    // Locked, not lost. The names come back now and the files come back on the first touch.
     showPending();
+    armAutoReconnect();
     if (state === 'denied') { folderNote('Your music folder is remembered, but this browser is '
       + 'blocking it. Choose it again to reconnect.', true); return; }
     // WHY THIS SENTENCE EXISTS. Harold reconnected and then had to reconnect again — correctly,
@@ -1776,6 +1777,32 @@
     folderNote('Your music folder is remembered — one tap brings it back. If Chrome offers '
              + '"Allow on every visit", taking it may stop the asking; some phones ask every '
              + 'time regardless, and that is the browser rather than this app.');
+  }
+
+  // AS CLOSE TO AUTOMATIC AS THE PLATFORM ALLOWS. Android will not carry a file grant across a
+  // cold start — Harold's own report proved that — and requestPermission() needs a gesture, so a
+  // page can never reach the folder on its own. What it CAN do is stop making the gesture a
+  // separate errand: the FIRST touch anywhere in the app, whatever it was for, is enough
+  // activation, so the folder comes back on the first thing the person does rather than on a
+  // button they have to find and understand first.
+  //
+  // Once per load, only while a folder is actually waiting, and it never swallows the touch —
+  // the tap does its own job as well. The permission sheet is Chrome's and still appears; what
+  // is gone is having to ask for it deliberately.
+  let autoTried = false;
+  function armAutoReconnect() {
+    if (autoTried) return;
+    const go = () => {
+      if (autoTried) return;
+      if (!folderHandle) return;
+      if (queue.some((t) => t.file || t.handle)) return;   // already loaded; nothing to do
+      autoTried = true;
+      reconnectFolder();
+    };
+    // pointerdown, not click: it arrives first, and a drag across the stage never becomes a
+    // click at all — which is exactly the gesture someone opening this app makes first.
+    document.addEventListener('pointerdown', go, { once: false, capture: true });
+    document.addEventListener('keydown', go, { capture: true });
   }
 
   async function reconnectFolder() {
@@ -2745,20 +2772,63 @@
     }
   }
 
+  // TWO FINGERS SEND FAIRIES OUT. One finger paints where it is; two says "off you go" and the
+  // lights leave and roam on their own. It is the one gesture a phone has that a mouse does not,
+  // and it costs nothing to give it a meaning.
+  //
+  // It takes over from painting entirely while both are down, and the second finger CANCELS the
+  // stroke the first was making — otherwise a two-finger gesture leaves a smear of bursts behind
+  // it from whichever finger landed first.
+  const FINGER_FAIRY_GAP = 320;    // ms between fairies while two fingers are held
+  const down = new Map();          // pointerId -> {x, y}
+  let lastFingerFairy = 0;
+
+  function twoFingerFairies(ev) {
+    if (!fx) initVisuals();
+    if (!fxShown() || !fx) return;
+    const now = performance.now();
+    if (now - lastFingerFairy < FINGER_FAIRY_GAP) return;
+    lastFingerFairy = now;
+    const r = $('stage').getBoundingClientRect();
+    if (!r.width || !r.height) return;
+    // One from each finger, so the pair of them is visible in what comes out.
+    for (const pt of down.values()) {
+      const x = (pt.x - r.left) / r.width, y = (pt.y - r.top) / r.height;
+      if (x < 0 || x > 1 || y < 0 || y > 1) continue;
+      spawnFairy(x, y, PUNCH[readPunch()], readPalette());
+    }
+  }
+
   $('stage').addEventListener('pointerdown', (ev) => {
+    down.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (down.size >= 2) {
+      // The first finger's stroke is abandoned rather than finished: this is one gesture now.
+      pressed = false; painting = true;      // painting stays true so the click cannot toggle
+      clearTimeout(holdTimer);
+      twoFingerFairies(ev);
+      return;
+    }
     pressed = true; painting = false;
     pressX = ev.clientX; pressY = ev.clientY;
     clearTimeout(holdTimer);
     holdTimer = setTimeout(() => { if (pressed) { painting = true; paintAt(ev); } }, PAINT_HOLD);
   });
   $('stage').addEventListener('pointermove', (ev) => {
+    if (down.has(ev.pointerId)) { const p = down.get(ev.pointerId); p.x = ev.clientX; p.y = ev.clientY; }
+    if (down.size >= 2) { twoFingerFairies(ev); return; }
     if (!pressed) return;
     if (!painting && Math.hypot(ev.clientX - pressX, ev.clientY - pressY) < PAINT_MOVE) return;
     painting = true;
     paintAt(ev);
   });
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
-    $('stage').addEventListener(ev, () => { pressed = false; clearTimeout(holdTimer); });
+    $('stage').addEventListener(ev, (e) => {
+      down.delete(e.pointerId);
+      pressed = false;
+      clearTimeout(holdTimer);
+      // `painting` is deliberately NOT cleared here — the click handler clears it, and clearing
+      // it early is how a two-finger gesture ends up toggling full screen on the way out.
+    });
   }
   // The click still owns full screen, so a keyboard Enter or Space on this button keeps working —
   // those produce a click with no pointer sequence, so `painting` is false and they toggle.
