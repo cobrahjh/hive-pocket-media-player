@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.45.0-beta';
+  const VERSION = '1.46.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2902,9 +2902,20 @@
     if (!fairies.length) { dropBolts(); return; }
     if (ow > 0 && oh > 0 && boltW > 0 && boltH > 0 && (ow !== boltW || oh !== boltH)) {
       const sx = boltW / ow, sy = boltH / oh;
+      // A ROTATION IS NOT A RESIZE. When the two axes scale by nearly the same amount — the stage
+      // growing as the browser chrome goes away — scaling the trail keeps the curve the person
+      // was watching. When they scale differently by a lot, scaling it is a lie: a rotation
+      // multiplies x by 2.2 and y by 0.45, and three seconds of curve comes out as a flat streak
+      // across the whole screen, which is more distracting than no tail at all.
+      //
+      // SO THE TAIL IS DROPPED PAST THAT POINT and redraws itself over the next few seconds. What
+      // is lost, stated: rotate the phone and the wisp keeps going but its history is gone, so
+      // for about three seconds it is a shorter wisp than it was.
+      const keepTrail = (sx / sy) > 0.7 && (sx / sy) < 1.43;
       for (const fa of fairies) {
         fa.x *= sx; fa.y *= sy;
-        for (let i = 0; i < fa.trail.length; i += 2) {
+        if (!keepTrail) { fa.trail.length = 0; }
+        else for (let i = 0; i < fa.trail.length; i += 2) {
           fa.trail[i] *= sx; fa.trail[i + 1] *= sy;
         }
         fa.trail.push(NaN, NaN);
@@ -2921,6 +2932,37 @@
     // The loop stops itself when both lists empty, so a surviving wisp needs it started again
     // if a previous clear had already parked it.
     if (!boltRaf) { boltLast = performance.now(); boltRaf = requestAnimationFrame(boltLoop); }
+  }
+
+  // BOTH RENDERERS LISTEN FOR THEIR OWN RESIZE. `fx-render.js` and `eq-render.js` each register
+  // window.addEventListener('resize', resize) when they start, so the bars and the bursts
+  // re-measure themselves on a rotation or a viewport change no matter who caused it. THE BOLT
+  // LAYER NEVER DID, and that asymmetry is the whole bug: everything on the stage adjusted except
+  // the one canvas Pocket owns, so only the wisps broke and everything around them looked fine.
+  //
+  // It never showed in the container because setCover() reflows by hand and a headless viewport
+  // does not move afterwards. A PHONE MOVES AFTERWARDS. requestFullscreen() is asynchronous and
+  // best-effort: the tap applies the CSS cover and reflows against that box, and then, a frame or
+  // more later, the browser chrome actually goes away and the viewport grows again. The canvas
+  // bitmap stayed at the size measured before that second change and the browser stretched it —
+  // 824x1830 pixels of wisp squeezed into a 915x412 box after a rotation, which is a smear in the
+  // wrong place rather than a light. Measured, at 1.45.0, exactly those numbers.
+  //
+  // COALESCED TO ONE CALL A FRAME. A rotation fires a burst of resize events, and each reflow
+  // pushes a pen-lift into every trail; a dozen of them in a row would shred the tail into dashes.
+  // The scaling itself is exact and repeating it costs nothing, so it is only the breaks that
+  // need this.
+  let reflowRaf = 0;
+  function reflowSoon() {
+    if (reflowRaf) return;
+    reflowRaf = requestAnimationFrame(() => { reflowRaf = 0; reflowBolts(); });
+  }
+  for (const ev of ['resize', 'orientationchange']) window.addEventListener(ev, reflowSoon);
+  // Entering native full screen resizes the stage without firing anything setCover() sees, and
+  // leaving it does the same on the way back. The existing fullscreenchange handler only deals
+  // with the CLASS; this deals with the box.
+  for (const ev of ['fullscreenchange', 'webkitfullscreenchange']) {
+    document.addEventListener(ev, reflowSoon);
   }
 
   // ── Painting with a finger ────────────────────────────────────────────────
