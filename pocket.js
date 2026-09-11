@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.32.0-beta';
+  const VERSION = '1.33.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -159,11 +159,15 @@
   // one of them, so choosing it switches the renderer's own beat detector OFF and Pocket drives
   // all three ranges itself with strikes. Everything else here is handed straight to fire().
   const BEAT_EFFECTS = ['fireworks', 'confetti', 'embers', 'hearts', 'fountain', 'nova',
-                        'lightning', 'random'];
+                        'lightning', 'fairy', 'random'];
   // What 'random' and Surprise me are allowed to land on. Lightning is out of both for the same
   // reason storm and lightning are out of the ambient roll: it flashes the screen, and the rule
   // in this codebase is that flashing happens when someone picks it by name and never when dice
   // pick it for them. Nobody consented to a strobe by pressing a button labelled Surprise me.
+  // Fairy stays IN the roll where lightning stays out: lightning flashes the whole screen and
+  // that is the thing nobody consents to by pressing a dice button. A fairy is a moving point of
+  // light the size of a fingertip, and the bursts it throws are the same six anyone can already
+  // roll — nothing about it is a strobe.
   const ROLLABLE_EFFECTS = BEAT_EFFECTS.filter((e) => e !== 'random' && e !== 'lightning');
   function readBeatEffect() {
     try { const v = localStorage.getItem(BEAT_KEY); return BEAT_EFFECTS.includes(v) ? v : 'fireworks'; }
@@ -514,6 +518,9 @@
   // is switched off and this replaces it. Deliberately the renderer's own numbers — bands 0-3,
   // the 0.12 floor, the sensitivity straight from the setting — so choosing lightning changes
   // WHAT is drawn on the beat and not WHEN.
+  // The effects Pocket draws itself, which are exactly the ones the renderer's beat detector
+  // cannot fire — so for these its beat is switched off and this bass detector replaces it.
+  const POCKET_DRIVEN = ['lightning', 'fairy'];
   const BASS_FLOOR = 0.12, BASS_GAP = 200;
   let bassAvg = 0, lastBassAt = 0;
 
@@ -543,11 +550,12 @@
     const b = bandEnergy(bands, 0, 3);
     const bWas = bassAvg;
     bassAvg = bassAvg * 0.94 + b * 0.06;
-    if (readBeatEffect() === 'lightning' && now - lastBassAt >= BASS_GAP
+    if (POCKET_DRIVEN.includes(readBeatEffect()) && now - lastBassAt >= BASS_GAP
         && b >= BASS_FLOOR && b >= bWas * sens) {
       lastBassAt = now;
       // Where the renderer puts a beat burst: middle of the stage, a little above centre.
-      strike(0.3 + Math.random() * 0.4, 0.42 + Math.random() * 0.22);
+      fireOne(0.3 + Math.random() * 0.4, 0.42 + Math.random() * 0.22,
+              PUNCH[readPunch()], readPalette());
     }
 
     const d = DRIVE[readDrive()];
@@ -585,6 +593,8 @@
 
   // One burst at a point. fire() knows the six real effects only; 'random' is a Pocket-level
   // idea and is resolved per burst here, which is what makes Random actually vary.
+  const FAIRY_EFFECTS = ['fireworks', 'confetti', 'embers', 'hearts', 'fountain', 'nova'];
+
   function fireOne(x, y, intensity, palette) {
     if (!fx) return;
     let effect = readBeatEffect();
@@ -592,6 +602,7 @@
     // strike() keeps its own gap, so calling it from two places in the same frame — a finger and
     // a detector — costs one bolt, not two.
     if (effect === 'lightning') { strike(x, y); return; }
+    if (effect === 'fairy') { spawnFairy(x, y, intensity, palette); return; }
     fx.fire(effect, { x, y, intensity, palette });
   }
 
@@ -734,8 +745,9 @@
         // 'lightning' is not one of the renderer's six and it would fall back silently to a
         // default, so it is never sent: the renderer's beat is switched OFF instead and Pocket's
         // own bass detector drives the strikes. Anything else goes straight through.
-        enabled: readBeatEffect() !== 'lightning',
-        effect: readBeatEffect() === 'lightning' ? 'fireworks' : readBeatEffect(),
+        enabled: readBeatEffect() !== 'lightning' && readBeatEffect() !== 'fairy',
+        effect: (readBeatEffect() === 'lightning' || readBeatEffect() === 'fairy')
+          ? 'fireworks' : readBeatEffect(),
         sensitivity: SENS[readSens()],
         intensity: PUNCH[readPunch()],
       },
@@ -2485,9 +2497,12 @@
       fbolts[i].life -= dt;
       if (fbolts[i].life <= 0) fbolts.splice(i, 1);
     }
+    stepFairies(dt, now);
     boltCtx.setTransform(boltDpr, 0, 0, boltDpr, 0, 0);
     boltCtx.clearRect(0, 0, boltW, boltH);
-    if (!fbolts.length) return;          // cleared and stopped; nothing scheduled
+    // Cleared and stopped when BOTH are empty. Checking only the bolts left a live fairy with
+    // no loop to move it — the first thing that went wrong when this was added.
+    if (!fbolts.length && !fairies.length) return;
     boltCtx.globalCompositeOperation = 'lighter';
     boltCtx.lineJoin = 'round';
     boltCtx.lineCap = 'round';
@@ -2517,13 +2532,119 @@
         boltCtx.fill();
       } catch (e) {}
     }
+    drawFairies();
     boltRaf = requestAnimationFrame(boltLoop);
+  }
+
+  // ── Fairies ──────────────────────────────────────────────────────────────────────────
+  // A point of light that darts across the stage and throws a DIFFERENT one of the six effects
+  // every time it flashes. The fairy is drawn here, on the same canvas as the bolts and in the
+  // same loop; the bursts are the renderer's own fire(), so a fairy costs one small object and
+  // whatever the effects were going to cost anyway.
+  //
+  // The reason it is Pocket's and not the renderer's is the reason lightning was: fire() knows
+  // six effects, this is not one of them, and a name it does not recognise falls back silently.
+  //
+  // It picks a NEW effect per flash rather than one per fairy. One per fairy would read as a
+  // fairy that throws confetti, which is just confetti on a moving origin; the point is that you
+  // cannot tell what the next one will be.
+  const FAIRY_LIFE = [1.7, 2.6];    // seconds
+  const FAIRY_GAP = 170;            // ms between one fairy's own bursts
+  const MAX_FAIRIES = 4;
+  const FAIRY_TRAIL = 16;           // points kept behind it
+  const FAIRY_SPEED = [0.26, 0.46]; // fraction of the stage's diagonal per second
+  let fairies = [];
+
+  function spawnFairy(nx, ny, intensity, palette) {
+    if (!boltReady()) return;
+    sizeBolt();
+    if (!boltW || !boltH) return;
+    const now = performance.now();
+    const diag = Math.hypot(boltW, boltH);
+    fairies.push({
+      x: (typeof nx === 'number' ? nx : rand(0.15, 0.85)) * boltW,
+      y: (typeof ny === 'number' ? ny : rand(0.2, 0.8)) * boltH,
+      a: rand(0, Math.PI * 2),
+      sp: rand(FAIRY_SPEED[0], FAIRY_SPEED[1]) * diag,
+      // Two wander terms at different rates, so the path curves without ever repeating a shape.
+      w1: rand(1.4, 2.6), w2: rand(3.1, 5.2), amp: rand(2.0, 3.6),
+      t: rand(0, 10),
+      life: rand(FAIRY_LIFE[0], FAIRY_LIFE[1]),
+      maxLife: 0, trail: [], lastFire: now - FAIRY_GAP,
+      rgb: boltRgb(),
+      intensity: intensity || 1,
+      palette: palette || readPalette(),
+    });
+    const f = fairies[fairies.length - 1];
+    f.maxLife = f.life;
+    while (fairies.length > MAX_FAIRIES) fairies.shift();
+    if (!boltRaf) { boltLast = now; boltRaf = requestAnimationFrame(boltLoop); }
+  }
+
+  function stepFairies(dt, now) {
+    for (let i = fairies.length - 1; i >= 0; i--) {
+      const f = fairies[i];
+      f.life -= dt;
+      if (f.life <= 0) { fairies.splice(i, 1); continue; }
+      f.t += dt;
+      f.a += (Math.sin(f.t * f.w1) + Math.sin(f.t * f.w2) * 0.6) * f.amp * dt;
+      f.x += Math.cos(f.a) * f.sp * dt;
+      f.y += Math.sin(f.a) * f.sp * dt;
+      // Turn at the edges rather than wrapping: a fairy that reappears on the other side reads
+      // as two fairies, and rather than as one thing moving.
+      const m = 6;
+      if (f.x < m) { f.x = m; f.a = Math.PI - f.a; }
+      if (f.x > boltW - m) { f.x = boltW - m; f.a = Math.PI - f.a; }
+      if (f.y < m) { f.y = m; f.a = -f.a; }
+      if (f.y > boltH - m) { f.y = boltH - m; f.a = -f.a; }
+      f.trail.push(f.x, f.y);
+      if (f.trail.length > FAIRY_TRAIL * 2) f.trail.splice(0, f.trail.length - FAIRY_TRAIL * 2);
+      if (fx && fxShown() && now - f.lastFire >= FAIRY_GAP) {
+        f.lastFire = now;
+        fx.fire(pick(FAIRY_EFFECTS), {
+          x: f.x / boltW, y: f.y / boltH,
+          // Small on purpose. A fairy throwing full-size bursts several times a second is not a
+          // fairy, it is the effects running at four times the usual rate.
+          intensity: f.intensity * 0.42,
+          palette: f.palette,
+        });
+      }
+    }
+  }
+
+  function drawFairies() {
+    for (const f of fairies) {
+      const t = Math.max(0, Math.min(1, f.life / f.maxLife));
+      const n = f.trail.length / 2;
+      for (let i = 0; i < n; i++) {
+        const k = (i + 1) / n;                     // 0 oldest, 1 newest
+        const r = Math.max(0.8, 2.6 * k);
+        boltCtx.globalAlpha = 0.5 * k * k * t;
+        boltCtx.fillStyle = 'rgb(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ')';
+        boltCtx.beginPath();
+        boltCtx.arc(f.trail[i * 2], f.trail[i * 2 + 1], r, 0, Math.PI * 2);
+        boltCtx.fill();
+      }
+      const core = Math.max(4, boltH * 0.012);
+      try {
+        const g = boltCtx.createRadialGradient(f.x, f.y, 0, f.x, f.y, core * 3.2);
+        g.addColorStop(0, 'rgba(255,255,255,' + (0.95 * t) + ')');
+        g.addColorStop(0.35, 'rgba(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ',' + (0.75 * t) + ')');
+        g.addColorStop(1, 'rgba(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ',0)');
+        boltCtx.globalAlpha = 1;
+        boltCtx.fillStyle = g;
+        boltCtx.beginPath();
+        boltCtx.arc(f.x, f.y, core * 3.2, 0, Math.PI * 2);
+        boltCtx.fill();
+      } catch (e) {}
+    }
   }
 
   // A rotation or a jump into full screen changes the box under a live bolt. Cheaper and more
   // honest to drop what is in flight than to redraw it against coordinates it was never built in.
   function clearBolts() {
     fbolts.length = 0;
+    fairies.length = 0;
     if (boltRaf) { cancelAnimationFrame(boltRaf); boltRaf = 0; }
     if (boltCtx && boltW && boltH) {
       boltCtx.setTransform(boltDpr, 0, 0, boltDpr, 0, 0);
@@ -2708,6 +2829,8 @@
     pickFolder, reconnectFolder, forgetFolder, resumeFolder,
     tutStart, tutEnd,
     get bolts() { return fbolts.length; },
+    get fairies() { return fairies.length; },
+    spawnFairy,
     strike,
     addLink,
     removeAt,
