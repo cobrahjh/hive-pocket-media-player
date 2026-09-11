@@ -251,6 +251,33 @@ function resizeTo(app, w, h) {
   check('switching the effects off does take them', set.pocket.fairyRoamCount === 0,
     'the layer they are drawn on is gone, so they have to go with it');
 
+  // ── 9b. effects off is not a reason to do nothing ────────────────────────────────────────
+  // Harold's phone at 1.48.0: "On the stage: equalizer only", three gestures, every one refused,
+  // nothing on screen to say why. A finger on the stage is a request for the effects and the
+  // app now grants it - visibly, through the same setting the star button toggles.
+  const off = boot({ frames: true });
+  await settle();
+  const sel = off.els('visualsSel');
+  sel.value = 'eq';
+  fire(sel, 'change');
+  check('effects can be switched off', off.els('fxBtn').getAttribute('aria-pressed') === 'false');
+  twoFinger(off);
+  check('two fingers turn them back on', off.els('fxBtn').getAttribute('aria-pressed') === 'true');
+  check('and the wisps go out', off.pocket.fairyRoamCount === 2, String(off.pocket.fairyRoamCount));
+  check('and the log says a finger did it', off.pocket.wispLog.turnedOn === 1,
+    JSON.stringify(off.pocket.wispLog));
+
+  // A clean tap must NOT do this. It is full screen and nothing else, and an accidental brush
+  // that turns a setting on is the cost this design accepted only for gestures that mean draw.
+  const tapOnly = boot({ frames: true });
+  await settle();
+  const sel2 = tapOnly.els('visualsSel');
+  sel2.value = 'eq';
+  fire(sel2, 'change');
+  fire(tapOnly.els('stage'), 'click');
+  check('a plain tap leaves them off', tapOnly.els('fxBtn').getAttribute('aria-pressed') === 'false');
+  check('and goes full screen instead', tapOnly.els('stageWrap').classList.contains('cover') === true);
+
   // ── 10. this suite must be able to fail ──────────────────────────────────────────────────
   // Cut the resize listener back out and require case 7 to collapse. Case 7 is the only one here
   // that would have caught the bug that reached the phone twice, so it is the one worth proving.

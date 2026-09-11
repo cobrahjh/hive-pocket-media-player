@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.48.0-beta';
+  const VERSION = '1.49.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2098,6 +2098,7 @@
       + ', gestures ' + wispLog.gestures + ', sent ' + wispLog.spawned
       + ', dismissed ' + wispLog.dismissed
       + (wispLog.refused ? ', REFUSED: ' + wispLog.refused : '')
+      + ', effects turned on by a finger ' + wispLog.turnedOn
       + ', reflows ' + wispLog.reflows + ', tails dropped ' + wispLog.tailDrops);
     add('wisp box', boltW + 'x' + boltH + ' bitmap ' + (boltCv ? boltCv.width + 'x' + boltCv.height : 'none')
       + ', canvas ' + (boltCv ? (boltCv.hidden ? 'hidden' : 'shown') : 'not found')
@@ -2534,7 +2535,8 @@
   // is off, it spawned and the toggle cleared it, it spawned and a reflow cleared it, or it
   // spawned and is drawing with no tail. Three releases were spent guessing at the folder
   // question before one line from the phone settled it; this is that line, for this question.
-  const wispLog = { gestures: 0, refused: '', spawned: 0, dismissed: 0, reflows: 0, tailDrops: 0 };
+  const wispLog = { gestures: 0, refused: '', spawned: 0, dismissed: 0, reflows: 0, tailDrops: 0,
+                    turnedOn: 0 };
   let fbolts = [], boltRaf = 0, boltLast = 0, lastBoltAt = 0, lastFlashAt = 0;
 
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -3000,16 +3002,35 @@
   const PAINT_GAP = 80;      // ms between bursts along a drag, so one swipe is not one flood
   let painting = false, pressX = 0, pressY = 0, lastPaint = 0, holdTimer = 0, pressed = false;
 
+  // A FINGER ON THE STAGE IS A REQUEST FOR THE EFFECTS, and the app used to refuse it silently
+  // when they were off. Harold's phone at 1.48.0: "On the stage: equalizer only", three
+  // two-finger gestures, every one REFUSED, nothing on screen to say why. It read as "no wisps".
+  //
+  // The renderers already start themselves here — a finger on a cold app had nothing to draw on
+  // and the gesture did nothing at all, the exact first thing anyone would try, so painting
+  // starts them itself (1.19.0). Effects being OFF is the same dead gesture one setting further
+  // along, and it gets the same answer: the effects come on, visibly, the star in the header
+  // flips, and the gesture proceeds. A setting that a one-tap star already toggles is not a
+  // decision the app has to protect from a finger.
+  //
+  // WHAT THAT COSTS, since it changes a setting: "equalizer only" no longer survives a drag,
+  // a hold or two fingers on the stage — someone who chose bars alone and brushes the stage gets
+  // the effects back and has to tap the star again. A clean tap does NOT do this; it still only
+  // toggles full screen. The gestures that turn the effects on are exactly the ones whose only
+  // meaning is "draw something here", which is the point.
+  function wantEffects() {
+    if (!fx) initVisuals();
+    if (!fxShown()) {
+      applyVisuals('both');
+      wispLog.turnedOn++;
+    }
+    return !!fx && fxShown();
+  }
+
   function paintAt(ev) {
     const mode = readTouch();
     if (mode === 'off') return;         // the drag is still swallowed; it just draws nothing
-    // The renderers are built on the first play or the first listen, which means a finger on a
-    // cold app had nothing to draw on and the gesture did nothing at all — the exact first thing
-    // anyone would try. Painting is the one feature here that needs no audio, so it starts them
-    // itself. Caught by testing the gesture on a freshly loaded page rather than a running one.
-    if (!fx) initVisuals();
-    if (!fxShown()) return;             // effects half is off; the equalizer has nothing to paint
-    if (!fx) return;
+    if (!wantEffects()) return;
     const r = $('stage').getBoundingClientRect();
     if (!r.width || !r.height) return;
     const x = (ev.clientX - r.left) / r.width;
@@ -3050,8 +3071,7 @@
   function twoFingerFairies() {
     if (twoFingerDone) return;
     wispLog.gestures++;
-    if (!fx) initVisuals();
-    if (!fxShown() || !fx) { wispLog.refused = fxShown() ? 'no renderer' : 'effects are off'; return; }
+    if (!wantEffects()) { wispLog.refused = 'no renderer'; return; }
     const r = $('stage').getBoundingClientRect();
     if (!r.width || !r.height) { wispLog.refused = 'the stage measured 0'; return; }
     wispLog.refused = '';
