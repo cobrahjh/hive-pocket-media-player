@@ -177,6 +177,9 @@ function boot(opts) {
       const s = String(sel || '');
       return s.charAt(0) === '#' ? get(s.slice(1)) : el(s);
     },
+    // Every real document has a body, and the app toggles a class on it to resize the player.
+    // Same rule as the renderer fakes: what the app legitimately uses, the stub carries.
+    body: el('body'),
     querySelectorAll: () => [],
     hidden: false,
     get fullscreenElement() { return fullscreen.element; },

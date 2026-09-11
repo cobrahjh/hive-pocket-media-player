@@ -500,3 +500,30 @@ html, body {
   margin: 0.4rem 0 0; text-align: center;
   font-size: 0.72rem; line-height: 1.45; color: var(--muted);
 }
+
+
+/* ── the minimized player ──
+   What it hides is what you READ; what it keeps is what you TOUCH. The transport row and the
+   track name stay, the queue and the scrubber go, and the stage takes the room — which is the
+   whole point, so .now must stop reserving height as well as stop showing content. */
+.now { position: relative; }
+.mini-btn {
+  position: absolute; top: -2px; right: 0;
+  width: 32px; height: 32px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: none; color: var(--muted);
+  border: 0; border-radius: 8px; cursor: pointer;
+  transition: transform 0.18s, color 0.18s;
+}
+.mini-btn:hover { color: var(--hive); }
+.mini-btn[aria-pressed="true"] { transform: rotate(180deg); color: var(--hive); }
+@media (prefers-reduced-motion: reduce) { .mini-btn { transition: none; } }
+/* The title keeps clear of the button at every width, minimized or not. */
+.now-title { padding-right: 38px; }
+
+body.player-mini .queue-wrap,
+body.player-mini .now-sub,
+body.player-mini .scrub { display: none; }
+/* Tighter, because the section is now one line and a button rather than four rows. */
+body.player-mini .now { margin-bottom: 0.1rem; }
+body.player-mini .controls { margin-top: 0.35rem; }

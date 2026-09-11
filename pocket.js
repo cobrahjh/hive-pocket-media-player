@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.26.0-beta';
+  const VERSION = '1.27.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -632,24 +632,41 @@
     wander: 0.6,     // was 0.4 — a little life across the plume
   };
 
-  // Hiding the player, not removing it. With the microphone able to see sound this app does not
-  // own, the visuals stand on their own and the transport is often just something in the way.
-  // Everything stays wired: turn this off and the queue, the saved links and the controls are
-  // exactly where they were.
-  const HIDE_KEY = 'hive-pocket.hideplayer';
-  function readHidePlayer() {
-    try { return localStorage.getItem(HIDE_KEY) === '1'; } catch (e) { return false; }
+  // The player has three sizes, not two. Hidden and full were the only choices and the gap
+  // between them was the whole problem: hiding it takes away the play button, so anyone who
+  // actually wanted to PLAY something had to keep the queue, the scrubber and a two-line title
+  // on screen to get it — half the phone spent on a list you are not reading while watching
+  // visuals you are.
+  //
+  // Minimized keeps everything you touch and drops everything you only read: the transport row
+  // and the track name stay, the queue and the scrubber and the subtitle go. One tap on the
+  // player itself, because a size you change often does not belong three taps into a menu.
+  const PLAYER_KEY = 'hive-pocket.player';
+  const PLAYER_SIZES = ['full', 'mini', 'hidden'];
+  const HIDE_KEY = 'hive-pocket.hideplayer';      // the old boolean, read once and carried over
+
+  function readPlayer() {
+    try {
+      const v = localStorage.getItem(PLAYER_KEY);
+      if (PLAYER_SIZES.includes(v)) return v;
+      // Someone upgrading from a build that only had the switch keeps what they chose.
+      return localStorage.getItem(HIDE_KEY) === '1' ? 'hidden' : 'full';
+    } catch (e) { return 'full'; }
   }
-  function writeHidePlayer(on) {
-    try { localStorage.setItem(HIDE_KEY, on ? '1' : '0'); } catch (e) {}
+  function writePlayer(v) {
+    try { localStorage.setItem(PLAYER_KEY, PLAYER_SIZES.includes(v) ? v : 'full'); } catch (e) {}
   }
+  // Kept because several places ask this exact question — the stage hint, the diagnostics — and
+  // they mean "is the transport gone", which is still one state and not three.
+  function readHidePlayer() { return readPlayer() === 'hidden'; }
 
   // The parts that ARE the player. The stage, the menu button and the version chip are not in
   // this list on purpose: hiding the menu would strand you with no way back.
   const PLAYER_PARTS = ['#linkBtn', '#pickBtn', '#linkRow', '.now', '.controls', '.queue-wrap'];
 
-  function applyHidePlayer() {
-    const off = readHidePlayer();
+  function applyPlayer() {
+    const size = readPlayer();
+    const off = size === 'hidden';
     for (const sel of PLAYER_PARTS) {
       const el = document.querySelector(sel);
       if (!el) continue;
@@ -658,6 +675,19 @@
       if (sel === '#linkRow') { if (off) el.hidden = true; continue; }
       el.hidden = off;
     }
+    // One class, because what minimized hides is a LAYOUT question and belongs in the stylesheet
+    // rather than in six more querySelector lines here.
+    document.body.classList.toggle('player-mini', size === 'mini');
+    const b = $('miniBtn');
+    if (b) {
+      b.setAttribute('aria-pressed', size === 'mini' ? 'true' : 'false');
+      label('miniBtn', size === 'mini' ? 'Show the whole player' : 'Minimize the player');
+      b.title = size === 'mini' ? 'Show the queue and the scrubber again' : 'Keep the controls, hide the queue and scrubber';
+    }
+    // Resizing the player resizes the stage. A renderer that missed it draws into the old box.
+    if (eq && eqShown()) eq.resize();
+    if (fx && fxShown()) fx.resize();
+    clearBolts();
     // Nothing on screen could stop a playing track once the transport is gone, so it stops here
     // rather than playing on out of reach. The lock screen would still have held controls, but
     // "I hid the player and the music kept going" is not a thing to leave to chance.
@@ -1630,7 +1660,7 @@
     $('beatSel').value = readBeatEffect();
     $('sensSel').value = readSens();
     $('punchSel').value = readPunch();
-    $('hidePlayer').checked = readHidePlayer();
+    $('playerSel').value = readPlayer();
     $('driveSel').value = readDrive();
     $('touchSel').value = readTouch();
     $('qualSel').value = readQualitySetting();
@@ -1709,7 +1739,7 @@
     try { add('cores', navigator.hardwareConcurrency || 'unknown'); } catch (e) {}
     try { add('memory', (navigator.deviceMemory || 'unknown') + ' GB'); } catch (e) {}
     add('on the stage', visuals);
-    add('player hidden', readHidePlayer());
+    add('player', readPlayer());
     L.push('');
     add('listening', micLive);
     add('listen on open', readMicAuto());
@@ -2057,9 +2087,16 @@
     if (v === 'effect' || v === 'off') clearBolts();
   });
 
-  $('hidePlayer').addEventListener('change', () => {
-    writeHidePlayer($('hidePlayer').checked);
-    applyHidePlayer();
+  $('playerSel').addEventListener('change', () => {
+    writePlayer($('playerSel').value);
+    applyPlayer();
+    paintStageHint();
+  });
+  // The one-tap version, on the player. Never reaches 'hidden': taking the transport away is a
+  // decision, and a decision does not belong on a control you press without looking.
+  $('miniBtn').addEventListener('click', () => {
+    writePlayer(readPlayer() === 'mini' ? 'full' : 'mini');
+    applyPlayer();
   });
 
   $('sensSel').addEventListener('change', () => {
@@ -2383,7 +2420,7 @@
   readModes();
   micPaint();
   micNote('Not listening.');
-  applyHidePlayer();
+  applyPlayer();
   // Remembered microphone, reopened without a tap. This works — and ONLY works — because
   // getUserMedia needs no gesture once permission has been granted for this origin. It is a
   // promise that could not be kept for system audio, which is refused without a fresh tap
@@ -2434,6 +2471,7 @@
     get beatSens() { return { name: readSens(), value: SENS[readSens()] }; },
     get punch() { return { name: readPunch(), value: PUNCH[readPunch()] }; },
     get playerHidden() { return readHidePlayer(); },
+    get playerSize() { return readPlayer(); },
     get quality() {
       return { chosen: readQualitySetting(), running: readQuality(),
                caps: QUALITY[readQuality()], fps: autoFps, seed: seedTier() };

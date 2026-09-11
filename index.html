@@ -148,6 +148,12 @@
   </div>
 
   <section class="now">
+    <button class="mini-btn" id="miniBtn" type="button" aria-pressed="false"
+            title="Keep the controls, hide the queue and scrubber" aria-label="Minimize the player">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true">
+        <path d="M7.4 8.6 12 13.2l4.6-4.6L18 10l-6 6-6-6z"/>
+      </svg>
+    </button>
     <div class="now-title" id="nowTitle">Nothing loaded</div>
     <div class="now-sub" id="nowSub">Tap the folder button to choose music from this phone</div>
     <div class="scrub">
@@ -434,13 +440,18 @@
     </div>
 
     <div class="set">
-      <span class="set-lab">Player</span>
-      <label class="mic-auto" for="hidePlayer">
-        <input type="checkbox" id="hidePlayer">
-        <span>Hide the player<small>Leaves the visuals and this menu. The queue, your saved links
-          and the controls are untouched and come straight back when you turn this off. Anything
-          playing stops, since there would be no way to stop it.</small></span>
-      </label>
+      <label class="set-lab" for="playerSel">Player</label>
+      <select id="playerSel" title="How much of the player is on screen">
+        <option value="full">Everything</option>
+        <option value="mini">Minimized — controls and the track name</option>
+        <option value="hidden">Hidden — visuals only</option>
+      </select>
+      <p class="set-note"><b>Minimized</b> keeps what you touch and drops what you only read: the
+        transport row and the track name stay, the queue and the scrubber go, and the visuals get
+        the space. The chevron on the player does the same thing in one tap.</p>
+      <p class="set-note"><b>Hidden</b> leaves the visuals and this menu. Your queue, saved links
+        and controls are untouched and come straight back. Anything playing stops, since there
+        would be no way to stop it.</p>
     </div>
 
     <div class="set" id="folderGrp" hidden>
