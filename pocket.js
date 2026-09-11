@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.24.0-beta';
+  const VERSION = '1.25.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1330,6 +1330,196 @@
     if (shuffleOn) buildOrder();
     renderQueue();
     paintLib();
+    paintFolder();
+  }
+
+  // ── Remembering a folder ─────────────────────────────────────────────────────────────
+  // For every version until now this app asked for your music on every cold start, and said so
+  // in About: "a phone will not let a web app remember a folder." That stopped being true in
+  // January 2025, when Chrome shipped the File System Access API on Android in M132 — pickers
+  // included. The claim was simply never revisited.
+  //
+  // A directory handle is serializable, so it goes in IndexedDB — localStorage holds strings and
+  // a handle is not one. On the next visit the handle is still there and the PERMISSION may or
+  // may not be: queryPermission() says which. Granted means the folder can be read with no tap
+  // at all; 'prompt' means the browser wants a gesture first, and no amount of wanting changes
+  // that — a page cannot silently regain access to someone's files, which is the correct rule.
+  // So that case gets a button rather than a broken promise.
+  //
+  // The plain file picker stays for everyone else. Firefox and Safari have none of this, and a
+  // feature that improves Chrome must not take the app away from anything else.
+  const DB_NAME = 'hive-pocket';
+  const DB_STORE = 'handles';
+  const DB_KEY = 'musicFolder';
+
+  // A folder can be enormous, and a phone reading ten thousand entries is a phone that has
+  // stopped responding. WHAT STOPS BEING VISIBLE: past these limits the rest of the folder is
+  // not loaded, and the app says how many it took rather than pretending that was all of them.
+  const FOLDER_MAX_FILES = 500;
+  const FOLDER_MAX_DEPTH = 3;
+
+  const canRemember = () => typeof window.showDirectoryPicker === 'function';
+
+  function idb() {
+    return new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open(DB_NAME, 1); } catch (e) { reject(e); return; }
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE);
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  function idbPut(key, val) {
+    return idb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).put(val, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+  function idbGet(key) {
+    return idb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readonly');
+      const r = tx.objectStore(DB_STORE).get(key);
+      r.onsuccess = () => resolve(r.result || null);
+      r.onerror = () => reject(r.error);
+    }));
+  }
+  function idbDel(key) {
+    return idb().then((db) => new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, 'readwrite');
+      tx.objectStore(DB_STORE).delete(key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    }));
+  }
+
+  let folderHandle = null;
+
+  async function handleState(h) {
+    if (!h || !h.queryPermission) return 'unsupported';
+    try { return await h.queryPermission({ mode: 'read' }); } catch (e) { return 'prompt'; }
+  }
+
+  // Depth-first with both caps enforced, because a music folder is exactly the kind of thing
+  // that turns out to have a backup of itself inside it.
+  async function readFolder(dir, depth, out) {
+    if (depth > FOLDER_MAX_DEPTH || out.length >= FOLDER_MAX_FILES) return out;
+    const dirs = [];
+    for await (const [name, entry] of dir.entries()) {
+      if (out.length >= FOLDER_MAX_FILES) break;
+      if (entry.kind === 'file') {
+        if (/\.(mp3|m4a|aac|ogg|opus|wav|flac)$/i.test(name)) out.push(entry);
+      } else if (entry.kind === 'directory') {
+        dirs.push(entry);
+      }
+    }
+    for (const d of dirs) {
+      if (out.length >= FOLDER_MAX_FILES) break;
+      await readFolder(d, depth + 1, out);
+    }
+    return out;
+  }
+
+  async function loadFolder(h) {
+    folderNote('Reading ' + (h.name || 'the folder') + '…');
+    let handles;
+    try { handles = await readFolder(h, 1, []); }
+    catch (e) { folderNote('That folder could not be read.', true); return; }
+    if (!handles.length) { folderNote('No playable audio in that folder.', true); return; }
+    const files = [];
+    for (const fh of handles) {
+      try { files.push(await fh.getFile()); } catch (e) { /* vanished since the listing */ }
+    }
+    if (!files.length) { folderNote('That folder could not be read.', true); return; }
+    adopt(files);
+    const capped = handles.length >= FOLDER_MAX_FILES;
+    folderNote(files.length + ' from ' + (h.name || 'your folder')
+      + (capped ? ' — the first ' + FOLDER_MAX_FILES + ', which is this app\'s limit.' : '.'));
+    paintFolder();
+  }
+
+  function folderNote(msg, bad) {
+    const el = $('folderNote');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.hidden = !msg;
+    el.classList.toggle('bad', !!bad);
+  }
+
+  async function pickFolder() {
+    if (!canRemember()) { $('filePick').click(); return; }
+    let h;
+    try { h = await window.showDirectoryPicker({ id: 'hive-pocket-music', mode: 'read' }); }
+    catch (e) { return; }                    // they cancelled, which is not an error
+    folderHandle = h;
+    // NOT a silent catch. Remembering can fail for real reasons — private browsing, a storage
+    // quota, a browser with the picker but no usable IndexedDB — and the whole feature is the
+    // promise that this folder comes back. A promise that quietly did not happen is worse than
+    // one never made, and this is the same swallowed-exception shape that cost a release in
+    // 1.21.0. The music still loads either way; only the remembering is reported lost.
+    let remembered = true;
+    try { await idbPut(DB_KEY, h); } catch (e) { remembered = false; }
+    await loadFolder(h);
+    if (!remembered) {
+      folderHandle = null;
+      paintFolder();
+      folderNote('Playing, but this browser would not let the app remember the folder — you will '
+               + 'have to choose it again next time.', true);
+    }
+  }
+
+  // Called on load. Reads with no tap when permission survived, and otherwise offers the button
+  // rather than firing a request that the browser will refuse without a gesture.
+  async function resumeFolder() {
+    if (!canRemember()) return;
+    let h = null;
+    try { h = await idbGet(DB_KEY); } catch (e) { return; }
+    if (!h) return;
+    folderHandle = h;
+    const state = await handleState(h);
+    paintFolder();
+    if (state === 'granted') { await loadFolder(h); return; }
+    if (state === 'denied') { folderNote('Your music folder is remembered, but this browser is '
+      + 'blocking it. Choose it again to reconnect.', true); return; }
+    folderNote('Your music folder is remembered. One tap reconnects it.');
+  }
+
+  async function reconnectFolder() {
+    if (!folderHandle) return;
+    let ok = 'denied';
+    try { ok = await folderHandle.requestPermission({ mode: 'read' }); } catch (e) {}
+    if (ok !== 'granted') { folderNote('This browser would not reconnect that folder. Choose it '
+      + 'again to start over.', true); return; }
+    await loadFolder(folderHandle);
+  }
+
+  async function forgetFolder() {
+    folderHandle = null;
+    try { await idbDel(DB_KEY); } catch (e) {}
+    folderNote('Forgotten. The app will ask for music again next time.');
+    paintFolder();
+  }
+
+  function paintFolder() {
+    const grp = $('folderGrp');
+    if (grp) grp.hidden = !canRemember();
+    const rec = $('folderReconnect');
+    if (rec) rec.hidden = !folderHandle;
+    const forget = $('folderForget');
+    if (forget) forget.disabled = !folderHandle;
+    const name = $('folderName');
+    if (name) {
+      name.textContent = folderHandle
+        ? 'Remembered: ' + (folderHandle.name || 'a folder')
+        : 'No folder remembered yet.';
+    }
+    // The same offer on the stage, where someone who never opens the menu will see it.
+    const bar = $('reconnectBar');
+    if (bar) bar.hidden = !(folderHandle && !queue.some((t) => t.file));
   }
 
   function saveNote(msg, bad) {
@@ -1480,6 +1670,8 @@
     add('screen awake', !!wakeLock);
     add('queue length', queue.length);          // a count, never the contents
     add('saved links', readLinks().length);     // likewise
+    add('can remember a folder', canRemember());
+    add('folder remembered', !!folderHandle);   // whether, never which
     try {
       const s = fx && fx.stats ? fx.stats() : null;
       if (s) add('drawing', 'parts ' + s.parts + ', background ' + s.ambient + ', bolts ' + fbolts.length);
@@ -1788,6 +1980,11 @@
     else if (ev.key === 'ArrowLeft') { ev.preventDefault(); if (tutAt > 0) tutShow(tutAt - 1); }
   });
 
+  $('folderPick').addEventListener('click', () => { closeSheet(); pickFolder(); });
+  $('folderReconnect').addEventListener('click', () => { closeSheet(); reconnectFolder(); });
+  $('folderForget').addEventListener('click', forgetFolder);
+  $('reconnectBtn').addEventListener('click', reconnectFolder);
+
   $('reportSend').addEventListener('click', sendReport);
   $('reportCopy').addEventListener('click', copyReport);
   $('reportGrp').addEventListener('toggle', () => { if ($('reportGrp').open) paintDiag(); });
@@ -1824,7 +2021,10 @@
     if ($('micAuto').checked && !micLive) micStart(true);
   });
 
-  $('pickBtn').addEventListener('click', () => $('filePick').click());
+  // A folder where the browser allows one, the old multi-file picker where it does not.
+  $('pickBtn').addEventListener('click', () => {
+    if (canRemember()) pickFolder(); else $('filePick').click();
+  });
   $('linkBtn').addEventListener('click', () => {
     const row = $('linkRow');
     row.hidden = !row.hidden;
@@ -2145,6 +2345,9 @@
   // Not shown when the microphone is about to open itself: that path asks for a permission, and
   // a permission prompt landing under a tutorial card is the worst first second this app could
   // offer. Those people get it from Show me around instead.
+  paintFolder();
+  resumeFolder();
+
   if (!tutSeen() && !readMicAuto()) {
     requestAnimationFrame(() => setTimeout(tutStart, 180));
   } else if (!tutSeen()) {
@@ -2177,6 +2380,9 @@
     get tutorialStep() { return tutAt; },
     get tutorialSteps() { return TUT.length; },
     get tutorialSeen() { return tutSeen(); },
+    get canRemember() { return canRemember(); },
+    get folderRemembered() { return !!folderHandle; },
+    pickFolder, reconnectFolder, forgetFolder, resumeFolder,
     tutStart, tutEnd,
     get bolts() { return fbolts.length; },
     strike,

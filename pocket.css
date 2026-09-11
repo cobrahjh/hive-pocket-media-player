@@ -480,3 +480,17 @@ html, body {
 .tut-btn.ghost { background: none; color: var(--muted); border: 1px solid var(--line); flex: 0 0 auto; }
 .tut-btn.ghost:hover { color: var(--hive); border-color: var(--hive); }
 .tut-btn[hidden] { display: none; }
+
+
+/* ── reconnecting a remembered folder ──
+   A single full-width row under the transport. It is the only thing on screen at that moment
+   worth tapping, so it is not competing with anything and does not need to be subtle. */
+.reconnect { flex: 0 0 auto; margin-top: 0.5rem; }
+.reconnect-btn {
+  width: 100%; min-height: 44px;
+  background: none; color: var(--hive);
+  border: 1px dashed var(--hive); border-radius: var(--radius);
+  font: inherit; font-weight: 600; cursor: pointer;
+}
+.reconnect-btn:hover { background: rgba(240, 160, 32, 0.08); }
+#folderNote.bad { color: #E0655A; }

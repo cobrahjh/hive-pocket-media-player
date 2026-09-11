@@ -112,6 +112,13 @@
     </div>
   </div>
 
+  <!-- The one-tap way back to a remembered folder, for someone who never opens the menu. Hidden
+       unless there IS a folder to reconnect and nothing from it is loaded. -->
+  <div class="reconnect" id="reconnectBar" hidden>
+    <button class="reconnect-btn" id="reconnectBtn" type="button"
+            title="Reopen the music folder this app remembered">Reconnect your music</button>
+  </div>
+
   <!-- Adding a link. Hidden until asked for, because most sessions are picked files. -->
   <div class="linkrow" id="linkRow" hidden>
     <input type="url" id="linkInput" inputmode="url" autocomplete="off" spellcheck="false"
@@ -435,6 +442,23 @@
       </label>
     </div>
 
+    <div class="set" id="folderGrp" hidden>
+      <span class="set-lab">Your music folder</span>
+      <p class="set-note" id="folderName">No folder remembered yet.</p>
+      <p class="set-note" id="folderNote" hidden></p>
+      <button class="sheet-btn" id="folderPick" type="button"
+              title="Choose a folder of music and let the app remember it">Choose a folder</button>
+      <button class="sheet-btn ghost" id="folderReconnect" type="button" hidden
+              style="margin-top:0.5rem" title="Reopen the remembered folder">Reconnect it</button>
+      <button class="sheet-btn danger" id="folderForget" type="button"
+              style="margin-top:0.5rem" title="Stop remembering this folder">Forget the folder</button>
+      <p class="set-note">This browser can remember a folder, so your music comes back without
+        picking it again. It cannot reopen it silently — a page is never allowed to reach your
+        files unasked — so when the browser wants permission again you get one tap rather than
+        the whole picker. It reads up to 500 tracks and three folders deep, and says so when a
+        folder is bigger than that.</p>
+    </div>
+
     <div class="set">
       <span class="set-lab">Saved links</span>
       <p class="set-note" id="linkCount">None saved.</p>
@@ -486,8 +510,9 @@
           the only way to get visuals from music this app cannot read — YouTube, Spotify, another
           phone across the room, a radio. Play it
           out loud and the bars and bursts follow it.</li>
-        <li><b>Folder button</b> — choose music from this phone. It asks every time you open the
-          app fresh, because a browser cannot remember a folder between sessions.</li>
+        <li><b>Folder button</b> — choose music from this phone. On Chrome the app remembers the
+          folder and brings it back with one tap next time; on other browsers it asks again each
+          time, because nothing there can remember one.</li>
         <li><b>Link button</b> — paste a direct address to an audio file. Saved links come back
           every time.</li>
         <li><b>Tap the visuals</b> for full screen. Tap again to come back.</li>
@@ -525,9 +550,12 @@
         it, after you press send in it.
       </p>
       <p class="set-note">
-        It asks for your music each time it starts cold: a phone will not let a web app remember a
-        folder, and copying every track into storage would double the space and could be wiped
-        without warning. Saved links do come back.
+        On a browser that allows it — Chrome on Android since early 2025, and Chromium on the
+        desktop — the app remembers your music folder and offers it back with one tap. It can
+        never reopen it silently; no page is allowed to reach your files unasked. Anywhere else
+        it asks for your music each time, because nothing there can remember a folder and copying
+        every track into storage would double the space and could be wiped without warning.
+        Saved links come back everywhere.
       </p>
     </details>
 
