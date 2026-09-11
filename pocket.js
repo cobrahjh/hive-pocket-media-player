@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.31.0-beta';
+  const VERSION = '1.32.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1381,9 +1381,20 @@
     const playing = !!audio && !audio.paused;
     $('playIcon').hidden = playing;
     $('pauseIcon').hidden = !playing;
-    label('playBtn', playing ? 'Pause' : 'Play');
+    // The button is about the FILE player and says so, but the microphone is a second source and
+    // the label has to stop implying the app is idle while it is listening.
+    label('playBtn', playing ? 'Pause' : (micLive ? 'Play a track — the microphone is still listening' : 'Play'));
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
-    if (!playing) stopPump(); else startPump();
+    // THE MICROPHONE IS A REASON TO KEEP PUMPING, and leaving it out of this line was a freeze.
+    // paintPlay() runs from a dozen places — every transport press, every pause event, hiding the
+    // player — and each of them stopped the loop that feeds the renderers whenever no FILE was
+    // playing. With the microphone open that is the normal state, so the visuals died while the
+    // mic stayed on and the bands kept arriving with nobody reading them.
+    //
+    // Measured: hide the player while listening and the particle count went 300 -> 300 -> 0 over
+    // three seconds, with micLive still true and band 0 still moving between 240 and 231. The
+    // equalizer stops, the effects drain, and nothing on screen says why.
+    if (!playing && !micLive) stopPump(); else startPump();
   }
 
   function paintTime() {
