@@ -68,7 +68,11 @@ function el(id) {
                                            : (on ? classes.add(c) : classes.delete(c))),
     },
     classes,
-    getBoundingClientRect: () => ({ width: 300, height: 150, left: 0, top: 0 }),
+    // A BOX THE TEST CAN MOVE. It was a frozen 300x150, which is why no suite could ever have
+    // caught the bolt layer failing to re-measure: nothing in this browser had ever changed
+    // size. Same default as before, so every existing case sees exactly what it saw.
+    rect: { width: 300, height: 150, left: 0, top: 0 },
+    getBoundingClientRect: () => e.rect,
     getContext: () => new Proxy({}, { get: () => noop, set: () => true }),
   };
   return e;
@@ -211,12 +215,24 @@ function boot(opts) {
     // every `new URL(...)` inside the app threw — which the app catches and reads as "not a
     // link", so link parsing silently failed and no suite noticed, because none added a link.
     URL: SandboxURL,
-    performance: { now: () => Date.now() },
+    // A CLOCK THE TEST DRIVES, opt-in. Real time and a real rAF are both wrong for anything
+    // that moves: a wisp is a position integrated frame by frame, so a suite that cannot say
+    // "now advance two seconds" can only assert that it exists, which is the assertion that was
+    // already true of all three broken builds. Off by default, so no existing case moves.
+    performance: { now: () => (o.frames ? clock : Date.now()) },
     // A plain http origin, so worker registration is skipped — the worker is not what these
     // suites are about, and registering one would need a second set of stubs.
     location: { protocol: 'http:', hostname: '127.0.0.1', href: 'http://127.0.0.1/' },
-    requestAnimationFrame: () => 0,
-    cancelAnimationFrame: noop,
+    requestAnimationFrame: (fn) => {
+      if (!o.frames) return 0;
+      rafs.push({ id: ++rafId, fn });
+      return rafId;
+    },
+    cancelAnimationFrame: (id) => {
+      if (!o.frames) return;
+      const i = rafs.findIndex((r) => r.id === id);
+      if (i >= 0) rafs.splice(i, 1);
+    },
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),
       setItem: (k, v) => store.set(k, String(v)),
@@ -274,6 +290,7 @@ function boot(opts) {
     document: doc,
   };
   const resizes = { eq: 0, fx: 0 };
+  let clock = 1000, rafId = 0, rafs = [];
   const fires = [];
   // A real window has addEventListener; this sandbox is the window, so it needs one or the app
   // dies at load the moment it listens for resize or orientationchange. Caught by the tutorial,
@@ -302,6 +319,18 @@ function boot(opts) {
     store,
     pocket: sandbox.window.__pocket,
     playCalls: () => playCalls,
+    // Advance the clock by ms and run whatever was waiting on a frame. The queue is taken before
+    // any callback runs, so a callback that schedules the next frame — which every loop in the
+    // app does — lands in the NEXT call rather than spinning here forever.
+    frame(ms) {
+      clock += (typeof ms === 'number' ? ms : 16);
+      const due = rafs; rafs = [];
+      for (const r of due) r.fn(clock);
+    },
+    /** n frames of ms each. 50 is the app's own dt cap, so it is the largest honest step. */
+    frames(n, ms) { for (let i = 0; i < n; i++) this.frame(typeof ms === 'number' ? ms : 16); },
+    now: () => clock,
+    pending: () => rafs.length,
   };
 }
 

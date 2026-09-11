@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.46.0-beta';
+  const VERSION = '1.47.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -3204,6 +3204,14 @@
     get fairyRoamCount() { return fairies.filter((f) => f.roam).length; },
     get fairyTrail() { return fairies.map((f) => f.trail.length / 2); },
     get fairyTrailRaw() { return fairies.map((f) => f.trail.slice()); },
+    // The box the wisps live in AND the bitmap that box is drawn into. They are different
+    // numbers and the difference is the whole of the 1.46.0 bug: the box followed the screen and
+    // the bitmap did not, so everything drawn was stretched into the wrong shape. A suite that
+    // read only one of them would have called that build correct.
+    get boltBox() {
+      return { w: boltW, h: boltH,
+               bw: boltCv ? boltCv.width : 0, bh: boltCv ? boltCv.height : 0, dpr: boltDpr };
+    },
     get fairyInBounds() {
       return fairies.every((f) => f.x >= -8 && f.x <= boltW + 8 && f.y >= -8 && f.y <= boltH + 8);
     },
