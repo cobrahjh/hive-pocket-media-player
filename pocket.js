@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.39.0-beta';
+  const VERSION = '1.40.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2666,9 +2666,13 @@
   // fairy that throws confetti, which is just confetti on a moving origin; the point is that you
   // cannot tell what the next one will be.
   const FAIRY_LIFE = [1.7, 2.6];        // seconds, when a beat throws one
-  const FAIRY_ROAM_LIFE = [5.5, 8.0];   // seconds, when two fingers send one out to wander
-  const FAIRY_GAP = 170;            // ms between one fairy's own bursts
-  const MAX_FAIRIES = 4;
+  // Thirty seconds, at Harold's word. Long enough that a summoned fairy is company rather than
+  // an event, and long enough to change three other numbers with it — see below.
+  const FAIRY_ROAM_LIFE = [28, 32];
+  const FAIRY_GAP = 170;            // ms between one fairy's own bursts, when it is alone
+  // Eight, not four. At two per gesture, four meant a third two-finger launch quietly evicted
+  // the first pair — fine when they lived six seconds and nobody saw it, obvious at thirty.
+  const MAX_FAIRIES = 8;
   const FAIRY_TRAIL = 16;           // points kept behind it
   const FAIRY_SPEED = [0.26, 0.46]; // fraction of the stage's diagonal per second
   let fairies = [];
@@ -2700,8 +2704,17 @@
       palette: palette || readPalette(),
     });
     const f = fairies[fairies.length - 1];
+    f.roam = !!roam;
     f.maxLife = f.life;
-    while (fairies.length > MAX_FAIRIES) fairies.shift();
+    // OVER THE CAP, A BEAT-THROWN ONE GOES FIRST. A fairy someone deliberately sent out with two
+    // fingers should not be evicted by one the music threw a moment later — at thirty seconds
+    // against two, the automatic ones would otherwise clear the deliberate ones off the screen
+    // within a bar. Only if every one alive is deliberate does the oldest of those give way.
+    while (fairies.length > MAX_FAIRIES) {
+      let i = fairies.findIndex((x) => !x.roam);
+      if (i < 0) i = 0;
+      fairies.splice(i, 1);
+    }
     if (!boltRaf) { boltLast = now; boltRaf = requestAnimationFrame(boltLoop); }
   }
 
@@ -2723,7 +2736,19 @@
       if (f.y > boltH - m) { f.y = boltH - m; f.a = -f.a; }
       f.trail.push(f.x, f.y);
       if (f.trail.length > FAIRY_TRAIL * 2) f.trail.splice(0, f.trail.length - FAIRY_TRAIL * 2);
-      if (fx && fxShown() && now - f.lastFire >= FAIRY_GAP) {
+      // THE GAP WIDENS WITH THE CROWD, and this is the number that makes thirty seconds
+      // survivable. One fairy firing every 170ms is about six bursts a second, which is the
+      // rate the effect was tuned at. Eight of them at that rate is forty-seven a second: the
+      // particle budget is gone inside a second, every burst is clipped to nothing, and a phone
+      // spends its battery drawing a smear. Scaling the gap by how many are alive holds the
+      // TOTAL at roughly six a second however many are out.
+      //
+      // WHAT THAT COSTS, since it is a threshold: an individual fairy visibly flashes less often
+      // when it has company. Two are each half as busy as one alone. That is the trade for
+      // several of them coexisting at all, and the alternative is not more fairies, it is a
+      // budget spent before any of them is drawn.
+      const gap = FAIRY_GAP * Math.max(1, fairies.length);
+      if (fx && fxShown() && now - f.lastFire >= gap) {
         f.lastFire = now;
         fx.fire(pick(FAIRY_EFFECTS), {
           x: f.x / boltW, y: f.y / boltH,
@@ -3003,6 +3028,7 @@
     tutStart, tutEnd,
     get bolts() { return fbolts.length; },
     get fairies() { return fairies.length; },
+    get fairyRoamCount() { return fairies.filter((f) => f.roam).length; },
     get promptWarning() { return promptWarning; },
     spawnFairy,
     strike,
