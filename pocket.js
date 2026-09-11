@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.25.0-beta';
+  const VERSION = '1.26.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1450,6 +1450,23 @@
     el.classList.toggle('bad', !!bad);
   }
 
+  const installed = () => {
+    try { return matchMedia('(display-mode: standalone)').matches === true; } catch (e) { return false; }
+  };
+
+  // Durable storage, asked for once. This does NOT keep the permission — that is Chrome's own
+  // decision, below — it keeps the stored HANDLE from being evicted when the phone is short of
+  // space, which would lose the folder in a way no prompt would explain.
+  let storagePersisted = null;      // null until asked: 'unknown' is an honest diagnostic
+
+  async function askPersist() {
+    try {
+      if (!navigator.storage || !navigator.storage.persist) return;
+      if (await navigator.storage.persisted()) { storagePersisted = true; return; }
+      storagePersisted = await navigator.storage.persist();
+    } catch (e) { /* not supported, or refused; neither is worth a message */ }
+  }
+
   async function pickFolder() {
     if (!canRemember()) { $('filePick').click(); return; }
     let h;
@@ -1463,6 +1480,7 @@
     // 1.21.0. The music still loads either way; only the remembering is reported lost.
     let remembered = true;
     try { await idbPut(DB_KEY, h); } catch (e) { remembered = false; }
+    if (remembered) askPersist();
     await loadFolder(h);
     if (!remembered) {
       folderHandle = null;
@@ -1485,13 +1503,21 @@
     if (state === 'granted') { await loadFolder(h); return; }
     if (state === 'denied') { folderNote('Your music folder is remembered, but this browser is '
       + 'blocking it. Choose it again to reconnect.', true); return; }
-    folderNote('Your music folder is remembered. One tap reconnects it.');
+    // WHY THIS SENTENCE EXISTS. Harold reconnected and then had to reconnect again — correctly,
+    // because Chrome's permission prompt has three answers and the default one is for this visit
+    // only. The app knew a tap was needed and said so, and said nothing about the choice inside
+    // that tap, which is the whole difference between one tap now and one tap forever. Naming
+    // the button in the browser's own prompt is not clutter; it is the instruction.
+    folderNote('Your music folder is remembered — one tap reconnects it. Chrome will ask: choose '
+             + '"Allow on every visit" and it stops asking.'
+             + (installed() ? '' : ' Adding this app to your home screen makes it permanent.'));
   }
 
   async function reconnectFolder() {
     if (!folderHandle) return;
     let ok = 'denied';
     try { ok = await folderHandle.requestPermission({ mode: 'read' }); } catch (e) {}
+    if (ok === 'granted') askPersist();
     if (ok !== 'granted') { folderNote('This browser would not reconnect that folder. Choose it '
       + 'again to start over.', true); return; }
     await loadFolder(folderHandle);
@@ -1502,6 +1528,27 @@
     try { await idbDel(DB_KEY); } catch (e) {}
     folderNote('Forgotten. The app will ask for music again next time.');
     paintFolder();
+  }
+
+  // Chrome hands this over once, and only when the app is installable. It is kept rather than
+  // acted on, because an install prompt fired at someone who did not ask for it is the thing
+  // everyone hates about web apps.
+  let installEvent = null;
+
+  function paintInstall() {
+    const row = $('installRow');
+    if (!row) return;
+    // Shown when there is something to gain from it: an install makes the folder permission
+    // permanent, so the offer belongs next to the folder and not on its own.
+    row.hidden = installed() || !installEvent;
+  }
+
+  async function doInstall() {
+    if (!installEvent) return;
+    const ev = installEvent;
+    installEvent = null;
+    paintInstall();
+    try { ev.prompt(); await ev.userChoice; } catch (e) {}
   }
 
   function paintFolder() {
@@ -1672,6 +1719,11 @@
     add('saved links', readLinks().length);     // likewise
     add('can remember a folder', canRemember());
     add('folder remembered', !!folderHandle);   // whether, never which
+    // A value tracked when it is learned rather than fetched here: diagnostics() is called from
+    // a keystroke handler and must stay synchronous, and a promise resolving into a block that
+    // has already been rendered is how a diagnostic starts lying.
+    add('storage persisted', storagePersisted === null ? 'unknown' : storagePersisted);
+    add('installed as an app', installed());
     try {
       const s = fx && fx.stats ? fx.stats() : null;
       if (s) add('drawing', 'parts ' + s.parts + ', background ' + s.ambient + ', bolts ' + fbolts.length);
@@ -1979,6 +2031,14 @@
     else if (ev.key === 'ArrowRight') { ev.preventDefault(); if (tutAt < TUT.length - 1) tutShow(tutAt + 1); }
     else if (ev.key === 'ArrowLeft') { ev.preventDefault(); if (tutAt > 0) tutShow(tutAt - 1); }
   });
+
+  window.addEventListener('beforeinstallprompt', (ev) => {
+    ev.preventDefault();          // ours to offer, at a moment that makes sense
+    installEvent = ev;
+    paintInstall();
+  });
+  window.addEventListener('appinstalled', () => { installEvent = null; paintInstall(); });
+  $('installBtn').addEventListener('click', doInstall);
 
   $('folderPick').addEventListener('click', () => { closeSheet(); pickFolder(); });
   $('folderReconnect').addEventListener('click', () => { closeSheet(); reconnectFolder(); });
@@ -2346,6 +2406,12 @@
   // a permission prompt landing under a tutorial card is the worst first second this app could
   // offer. Those people get it from Show me around instead.
   paintFolder();
+  paintInstall();
+  try {
+    if (navigator.storage && navigator.storage.persisted) {
+      navigator.storage.persisted().then((v) => { storagePersisted = v; });
+    }
+  } catch (e) {}
   resumeFolder();
 
   if (!tutSeen() && !readMicAuto()) {
@@ -2382,6 +2448,8 @@
     get tutorialSeen() { return tutSeen(); },
     get canRemember() { return canRemember(); },
     get folderRemembered() { return !!folderHandle; },
+    get installed() { return installed(); },
+    get canInstall() { return !!installEvent; },
     pickFolder, reconnectFolder, forgetFolder, resumeFolder,
     tutStart, tutEnd,
     get bolts() { return fbolts.length; },

@@ -494,3 +494,9 @@ html, body {
 }
 .reconnect-btn:hover { background: rgba(240, 160, 32, 0.08); }
 #folderNote.bad { color: #E0655A; }
+/* The instruction that makes the tap the LAST one. It sits under the button rather than inside
+   it because it describes a choice the browser is about to offer, not what this button does. */
+.reconnect-note {
+  margin: 0.4rem 0 0; text-align: center;
+  font-size: 0.72rem; line-height: 1.45; color: var(--muted);
+}

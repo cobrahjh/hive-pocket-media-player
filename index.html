@@ -117,6 +117,7 @@
   <div class="reconnect" id="reconnectBar" hidden>
     <button class="reconnect-btn" id="reconnectBtn" type="button"
             title="Reopen the music folder this app remembered">Reconnect your music</button>
+    <p class="reconnect-note">Choose <b>Allow on every visit</b> and it stops asking.</p>
   </div>
 
   <!-- Adding a link. Hidden until asked for, because most sessions are picked files. -->
@@ -457,6 +458,16 @@
         files unasked — so when the browser wants permission again you get one tap rather than
         the whole picker. It reads up to 500 tracks and three folders deep, and says so when a
         folder is bigger than that.</p>
+      <p class="set-note"><b>To stop being asked at all:</b> when Chrome shows the permission
+        prompt it offers three answers, and the middle one, <em>Allow on every visit</em>, is the
+        one that sticks. The default only covers this visit, which is why it asks again.</p>
+      <div id="installRow" hidden>
+        <p class="set-note">Installing this app to your home screen makes that permanent —
+          Chrome keeps folder permission for an installed app without asking again. It also opens
+          without the browser bars, which leaves more room for the visuals.</p>
+        <button class="sheet-btn" id="installBtn" type="button"
+                title="Add Hive Pocket to your home screen">Add to home screen</button>
+      </div>
     </div>
 
     <div class="set">
