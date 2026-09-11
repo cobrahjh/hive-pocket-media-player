@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.34.0-beta';
+  const VERSION = '1.35.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -716,9 +716,32 @@
     if (!el) return;
     if (micLive || current >= 0) { el.hidden = true; return; }
     el.hidden = false;
-    el.textContent = readHidePlayer()
-      ? 'Turn on the microphone in the menu — or just drag a finger across here.'
-      : 'Pick some music and press play — the visuals follow the sound. Tap for full screen, drag to paint.';
+    if (readHidePlayer()) {
+      el.textContent = 'Turn on the microphone in the menu — or just drag a finger across here.';
+      return;
+    }
+    // ASKING FOR MUSIC THAT IS ALREADY THERE. This line said "Pick some music and press play"
+    // with a hundred and sixty-nine tracks listed directly below it, because it only ever knew
+    // two states — something playing, or nothing at all — and a folder that is remembered but
+    // locked is a third. It reads as the app having lost the music and wanting it chosen again,
+    // which is what Harold saw as "always asking".
+    //
+    // The permission prompt itself cannot be avoided: Android will not carry a file grant across
+    // a cold start, whatever this app does. What can be avoided is the app ASKING, when all it
+    // needs is the press the person was about to make anyway.
+    const pending = queue.filter((t) => t.pending).length;
+    if (pending) {
+      el.textContent = 'Your music is still here — ' + pending
+        + (pending === 1 ? ' track' : ' tracks') + '. Press play and it comes straight back.';
+      return;
+    }
+    if (queue.length) {
+      el.textContent = 'Press play, or pick a track from the list — the visuals follow the sound. '
+        + 'Tap for full screen, drag to paint.';
+      return;
+    }
+    el.textContent = 'Pick some music and press play — the visuals follow the sound. '
+      + 'Tap for full screen, drag to paint.';
   }
 
   // ONE place that talks to BOTH renderers, because each one's setConfig REPLACES its config:
@@ -1467,6 +1490,7 @@
     renderQueue();
     paintLib();
     paintFolder();
+    paintStageHint();
     readyNote(picked.length);
   }
 
@@ -1632,6 +1656,7 @@
     renderQueue();
     paintLib();
     paintFolder();
+    paintStageHint();
   }
 
   // One track, fetched the moment it is wanted. Returns false when the file has gone since the
@@ -1758,6 +1783,7 @@
     renderQueue();
     paintLib();
     paintFolder();
+    paintStageHint();
   }
 
   async function forgetFolder() {
