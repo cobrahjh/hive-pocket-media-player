@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.43.0-beta';
+  const VERSION = '1.44.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2666,9 +2666,12 @@
   // fairy that throws confetti, which is just confetti on a moving origin; the point is that you
   // cannot tell what the next one will be.
   const FAIRY_LIFE = [1.7, 2.6];        // seconds, when a beat throws one
-  // Thirty seconds, at Harold's word. Long enough that a summoned fairy is company rather than
-  // an event, and long enough to change three other numbers with it — see below.
-  const FAIRY_ROAM_LIFE = [28, 32];
+  // A SUMMONED WISP DOES NOT EXPIRE. Thirty seconds was the previous answer and it was the
+  // wrong shape of answer: the person who sent it out has no idea when the clock started, so it
+  // vanished mid-drift for no reason they could see. Now it goes until the same gesture that
+  // started it stops it — a state you hold, not a timer you wait out. The cost is that the only
+  // way to end it is that second double-press: nothing else clears a roaming wisp, so a phone
+  // left on a table keeps drawing one until it is told not to.
   const FAIRY_GAP = 170;            // ms between one fairy's own bursts, when it is alone
   // Two. Eight was a swarm, and a swarm is the opposite of a wisp — the whole character of the
   // thing is one light you can follow with your eye. It also restores the fire rate: the gap
@@ -2676,8 +2679,9 @@
   //
   // WITH BOTH SLOTS HELD BY WISPS YOU SENT OUT, the music adds none of its own — the eviction
   // rule drops the beat-thrown one rather than yours, and at two slots that means all of them.
-  // Deliberate beats automatic, which is the right way round, but it does mean Fairy-on-the-beat
-  // goes quiet for thirty seconds after a two-finger launch. Wait it out or use one finger.
+  // Deliberate beats automatic, which is the right way round, but now that a summoned wisp never
+  // expires it also means Fairy-on-the-beat stays quiet until you double-press again to send
+  // them away. That is the price of the toggle, and it is stated in the tutorial text.
   const MAX_FAIRIES = 2;
   // A WISP IS MOSTLY TAIL. Sixteen points at sixty frames a second is a quarter-second smear
   // that reads as a dot with a smudge; eighty was over a second; this is about three and a half,
@@ -2686,9 +2690,13 @@
   const FAIRY_TRAIL = 210;
   // Drawn in BANDS, not one stroke per point, and this is what makes the length affordable. Two
   // hundred and ten segments times two wisps is 420 stroke calls a frame, 25,000 a second, on a
-  // phone. Ten bands of twenty-one points each is twenty calls a frame for the same picture: the
-  // taper goes from smooth to stepped across ten steps, which at this length nobody can see.
-  const FAIRY_BANDS = 10;
+  // phone. Bands of about thirteen points each are 32 calls a frame for the same picture.
+  //
+  // SIXTEEN RATHER THAN TEN because the fade is what these bands are now for. At ten, the last
+  // step down was a tenth of the brightness dropping at once and the tail ended on a visible
+  // edge; sixteen makes each step a sixteenth, which at this width is below what the eye picks
+  // out as a boundary. The extra twelve stroke calls a frame are the whole cost.
+  const FAIRY_BANDS = 16;
   const FAIRY_SPEED = [0.26, 0.46]; // fraction of the stage's diagonal per second
   let fairies = [];
 
@@ -2713,8 +2721,9 @@
       // into a scribble; a wisp has to draw one long readable curve.
       w1: rand(0.55, 1.15), w2: rand(1.4, 2.3), amp: rand(1.0, 1.8),
       t: rand(0, 10),
-      life: roam ? rand(FAIRY_ROAM_LIFE[0], FAIRY_ROAM_LIFE[1])
-                 : rand(FAIRY_LIFE[0], FAIRY_LIFE[1]),
+      // 1 is a placeholder for a roamer, never counted down — see stepFairies. It is not zero
+      // because the tail's brightness reads `life` directly and zero would draw nothing.
+      life: roam ? 1 : rand(FAIRY_LIFE[0], FAIRY_LIFE[1]),
       maxLife: 0, trail: [], lastFire: now - FAIRY_GAP,
       rgb: boltRgb(),
       intensity: intensity || 1,
@@ -2724,9 +2733,9 @@
     f.roam = !!roam;
     f.maxLife = f.life;
     // OVER THE CAP, A BEAT-THROWN ONE GOES FIRST. A fairy someone deliberately sent out with two
-    // fingers should not be evicted by one the music threw a moment later — at thirty seconds
-    // against two, the automatic ones would otherwise clear the deliberate ones off the screen
-    // within a bar. Only if every one alive is deliberate does the oldest of those give way.
+    // fingers should not be evicted by one the music threw a moment later — against a wisp
+    // that never expires, the automatic ones would otherwise clear the deliberate ones off the
+    // screen within a bar. Only if every one alive is deliberate does the oldest give way.
     while (fairies.length > MAX_FAIRIES) {
       let i = fairies.findIndex((x) => !x.roam);
       if (i < 0) i = 0;
@@ -2738,8 +2747,12 @@
   function stepFairies(dt, now) {
     for (let i = fairies.length - 1; i >= 0; i--) {
       const f = fairies[i];
-      f.life -= dt;
-      if (f.life <= 0) { fairies.splice(i, 1); continue; }
+      // A roamer's life is never spent. Everything else about it ages normally — it wanders,
+      // wraps and fires exactly as a beat-thrown one does; it simply has no end of its own.
+      if (!f.roam) {
+        f.life -= dt;
+        if (f.life <= 0) { fairies.splice(i, 1); continue; }
+      }
       f.t += dt;
       f.a += (Math.sin(f.t * f.w1) + Math.sin(f.t * f.w2) * 0.6) * f.amp * dt;
       f.x += Math.cos(f.a) * f.sp * dt;
@@ -2762,7 +2775,7 @@
       if (jumped) f.trail.push(NaN, NaN);      // a break the renderer lifts the pen at
       f.trail.push(f.x, f.y);
       if (f.trail.length > FAIRY_TRAIL * 2) f.trail.splice(0, f.trail.length - FAIRY_TRAIL * 2);
-      // THE GAP WIDENS WITH THE CROWD, and this is the number that makes thirty seconds
+      // THE GAP WIDENS WITH THE CROWD, and this is the number that makes an open-ended wisp
       // survivable. One fairy firing every 170ms is about six bursts a second, which is the
       // rate the effect was tuned at. Eight of them at that rate is forty-seven a second: the
       // particle budget is gone inside a second, every burst is clipped to nothing, and a phone
@@ -2789,10 +2802,9 @@
 
   function drawFairies() {
     for (const f of fairies) {
-      // The tail fades by AGE, not by the fairy's remaining life: a thirty-second wisp whose
-      // trail dimmed with its life would spend twenty of those seconds nearly invisible. Only
-      // the last second of its existence takes the whole thing down.
-      const t = Math.min(1, Math.max(0, f.life));
+      // A roamer draws at full brightness always — it has no remaining life to read. For a
+      // beat-thrown one, only its last second takes the whole thing down.
+      const t = f.roam ? 1 : Math.min(1, Math.max(0, f.life));
       const n = f.trail.length / 2;
       // Segments rather than dots. A line of circles is a dotted line at any spacing; joined
       // segments with a tapering width are a tail, and round caps hide the joins.
@@ -2804,13 +2816,18 @@
         // every band boundary and the tail reads as a dashed line.
         const hi = Math.min(n, lo + per + 1);
         if (hi - lo < 2) continue;
-        const k = (b + 1) / FAIRY_BANDS;            // 0 oldest, 1 newest
-        // LINEAR, not squared. Squared alpha put 90% of a long tail below 0.05 opacity: the trail
-        // was long in memory and short on screen, which is the same as not being long. The width
-        // still tapers faster than the brightness, so it thins to a thread while staying visible
-        // all the way back — which is what reads as a wisp rather than a comet.
-        boltCtx.globalAlpha = 0.62 * k * t;
-        boltCtx.lineWidth = Math.max(0.4, 3.2 * k * k + 0.4);
+        // FADES TO NOTHING RATHER THAN STOPPING. `b + 1` over the count made the oldest band
+        // a tenth-bright and then simply absent on the next frame — a tail with a cut end, which
+        // is the thing that read as wrong. Dividing by count-1 puts the oldest band at exactly
+        // zero, so the last visible thing on the tail is a segment fading out rather than one
+        // being switched off.
+        const k = (FAIRY_BANDS > 1) ? b / (FAIRY_BANDS - 1) : 1;   // 0 oldest, 1 newest
+        // A gentle curve, not squared. Squared alpha put 90% of a long tail below 0.05 opacity:
+        // the trail was long in memory and short on screen, which is the same as not being long.
+        // 1.25 keeps it visible most of the way back while still spending its last few bands
+        // getting to zero. The width tapers faster, so it thins to a thread while staying lit.
+        boltCtx.globalAlpha = 0.66 * Math.pow(k, 1.25) * t;
+        boltCtx.lineWidth = Math.max(0.3, 3.2 * k * k + 0.3);
         // The pen lifts at a NaN and comes back down on the next real point, so a wrap leaves a
         // clean end and a clean start rather than a chord across the whole screen.
         boltCtx.beginPath();
@@ -2907,6 +2924,11 @@
   // for as long as they were held, which made two fingers a second way of PAINTING — the thing
   // one finger already does. Harold's correction was "start the fairy moving around on screen",
   // and the word is start: you touch, they leave, and what happens next is theirs.
+  // AND THE SAME GESTURE SENDS THEM AWAY. Once a summoned wisp stopped expiring there had to be
+  // an off, and a second control for it would have been a setting nobody would find. So the
+  // gesture toggles: two fingers with none out sends two, two fingers with any out clears every
+  // one you sent. It clears ONLY yours — a fairy the music threw is on its own two-second clock
+  // and is not something you asked for, so it is not yours to dismiss.
   function twoFingerFairies() {
     if (twoFingerDone) return;
     if (!fx) initVisuals();
@@ -2914,6 +2936,10 @@
     const r = $('stage').getBoundingClientRect();
     if (!r.width || !r.height) return;
     twoFingerDone = true;
+    if (fairies.some((f) => f.roam)) {
+      for (let i = fairies.length - 1; i >= 0; i--) if (fairies[i].roam) fairies.splice(i, 1);
+      return;
+    }
     // One from each finger, so the pair of them is visible in what leaves.
     for (const pt of down.values()) {
       const x = (pt.x - r.left) / r.width, y = (pt.y - r.top) / r.height;
