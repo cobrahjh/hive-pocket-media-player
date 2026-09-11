@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.44.0-beta';
+  const VERSION = '1.45.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -698,7 +698,7 @@
     // Resizing the player resizes the stage. A renderer that missed it draws into the old box.
     if (eq && eqShown()) eq.resize();
     if (fx && fxShown()) fx.resize();
-    clearBolts();
+    reflowBolts();
     // Nothing on screen could stop a playing track once the transport is gone, so it stops here
     // rather than playing on out of reach. The lock screen would still have held controls, but
     // "I hid the player and the music kept going" is not a thing to leave to chance.
@@ -1070,7 +1070,7 @@
     {
       if (eq && eqShown()) eq.resize();
       if (fx && fxShown()) fx.resize();
-      clearBolts();
+      reflowBolts();
     }
   }
 
@@ -1121,7 +1121,7 @@
     // The stage just changed size by a lot. A renderer that missed it draws into the old box.
     if (eq && eqShown()) eq.resize();
     if (fx && fxShown()) fx.resize();
-    clearBolts();                       // in-flight bolts were built for the old box
+    reflowBolts();                      // bolts were built for the old box; wisps are rescaled
   }
 
   function pump() {
@@ -2422,8 +2422,9 @@
     const v = TOUCH_MODES.includes($('touchSel').value) ? $('touchSel').value : 'both';
     writeTouch(v);
     // A bolt still in the air when lightning is switched off would outlive the setting by a
-    // fifth of a second and look like the switch failed.
-    if (v === 'effect' || v === 'off') clearBolts();
+    // fifth of a second and look like the switch failed. Wisps are untouched by it: this setting
+    // is about what a FINGER does, and clearing them here took out ones the music had thrown.
+    if (v === 'effect' || v === 'off') clearStrikes();
   });
 
   $('playerSel').addEventListener('change', () => {
@@ -2855,16 +2856,71 @@
     }
   }
 
-  // A rotation or a jump into full screen changes the box under a live bolt. Cheaper and more
-  // honest to drop what is in flight than to redraw it against coordinates it was never built in.
+  // Everything on the bolt layer, gone. Only for when the layer itself is going away — effects
+  // switched off, or the canvas hidden — because it takes the wisps with it.
   function clearBolts() {
     fbolts.length = 0;
     fairies.length = 0;
+    dropBolts();
+  }
+
+  // Bolts only. Lightning switched off has to stop lightning; it has nothing to say about a wisp,
+  // which is a burst effect and not a bolt. Using clearBolts() here wiped both.
+  function clearStrikes() {
+    fbolts.length = 0;
+    if (!fairies.length) dropBolts();
+  }
+
+  function dropBolts() {
     if (boltRaf) { cancelAnimationFrame(boltRaf); boltRaf = 0; }
     if (boltCtx && boltW && boltH) {
       boltCtx.setTransform(boltDpr, 0, 0, boltDpr, 0, 0);
       boltCtx.clearRect(0, 0, boltW, boltH);
     }
+  }
+
+  // A rotation, a player resize or a jump into full screen changes the box everything on this
+  // layer was built in. A BOLT IS DROPPED: it is a fixed path from a fixed point, and redrawing
+  // it against coordinates it was never built in is worse than losing a fifth of a second of it.
+  //
+  // A WISP IS NOT. It is a position and a trail, both of which scale, and it is the thing the
+  // person is watching — a summoned one is deliberately open-ended now, so throwing it away on a
+  // full-screen tap made the tap look like it had cancelled them. Harold hit exactly that. So
+  // the positions are scaled into the new box and the wisp carries on.
+  //
+  // THE TRAIL BREAKS AT THE SEAM. Scaling is not a conformal map of the path it drew — a stage
+  // that gets four times taller and no wider stretches every old segment — so the honest thing
+  // is a pen lift: what came before stays where it was drawn, proportionally, and the new box's
+  // path starts clean. Without the lift the joint segment is the one wrong-looking line on screen.
+  function reflowBolts() {
+    fbolts.length = 0;
+    // A hidden canvas measures 0x0 and sizeBolt() falls back to 300x150, which would become the
+    // box every surviving wisp is scaled against. Nothing to reflow into, so nothing is measured.
+    if (!boltReady() || boltCv.hidden) { if (!fairies.length) dropBolts(); return; }
+    const ow = boltW, oh = boltH;
+    sizeBolt();
+    if (!fairies.length) { dropBolts(); return; }
+    if (ow > 0 && oh > 0 && boltW > 0 && boltH > 0 && (ow !== boltW || oh !== boltH)) {
+      const sx = boltW / ow, sy = boltH / oh;
+      for (const fa of fairies) {
+        fa.x *= sx; fa.y *= sy;
+        for (let i = 0; i < fa.trail.length; i += 2) {
+          fa.trail[i] *= sx; fa.trail[i + 1] *= sy;
+        }
+        fa.trail.push(NaN, NaN);
+        // Speed is a fraction of the diagonal and the diagonal just changed. Without this a wisp
+        // that was drifting across a 162px stage crawls across a 732px one.
+        const os = Math.hypot(ow, oh), ns = Math.hypot(boltW, boltH);
+        if (os > 0) fa.sp *= ns / os;
+      }
+    }
+    if (boltCtx && boltW && boltH) {
+      boltCtx.setTransform(boltDpr, 0, 0, boltDpr, 0, 0);
+      boltCtx.clearRect(0, 0, boltW, boltH);
+    }
+    // The loop stops itself when both lists empty, so a surviving wisp needs it started again
+    // if a previous clear had already parked it.
+    if (!boltRaf) { boltLast = performance.now(); boltRaf = requestAnimationFrame(boltLoop); }
   }
 
   // ── Painting with a finger ────────────────────────────────────────────────
