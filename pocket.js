@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.37.0-beta';
+  const VERSION = '1.38.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2625,14 +2625,20 @@
   // It picks a NEW effect per flash rather than one per fairy. One per fairy would read as a
   // fairy that throws confetti, which is just confetti on a moving origin; the point is that you
   // cannot tell what the next one will be.
-  const FAIRY_LIFE = [1.7, 2.6];    // seconds
+  const FAIRY_LIFE = [1.7, 2.6];        // seconds, when a beat throws one
+  const FAIRY_ROAM_LIFE = [5.5, 8.0];   // seconds, when two fingers send one out to wander
   const FAIRY_GAP = 170;            // ms between one fairy's own bursts
   const MAX_FAIRIES = 4;
   const FAIRY_TRAIL = 16;           // points kept behind it
   const FAIRY_SPEED = [0.26, 0.46]; // fraction of the stage's diagonal per second
   let fairies = [];
 
-  function spawnFairy(nx, ny, intensity, palette) {
+  // `roam` is the difference between the two ways a fairy arrives. On the beat it is a burst
+  // that happens to move — it appears, crosses a little of the stage and is gone, which is what
+  // a burst should do. Summoned by two fingers it is a THING YOU STARTED, and a thing you
+  // started that is gone in two seconds did not start anything. So it lives about three times as
+  // long and travels slower, which reads as wandering rather than as being flung.
+  function spawnFairy(nx, ny, intensity, palette, roam) {
     if (!boltReady()) return;
     sizeBolt();
     if (!boltW || !boltH) return;
@@ -2642,11 +2648,12 @@
       x: (typeof nx === 'number' ? nx : rand(0.15, 0.85)) * boltW,
       y: (typeof ny === 'number' ? ny : rand(0.2, 0.8)) * boltH,
       a: rand(0, Math.PI * 2),
-      sp: rand(FAIRY_SPEED[0], FAIRY_SPEED[1]) * diag,
+      sp: rand(FAIRY_SPEED[0], FAIRY_SPEED[1]) * diag * (roam ? 0.72 : 1),
       // Two wander terms at different rates, so the path curves without ever repeating a shape.
       w1: rand(1.4, 2.6), w2: rand(3.1, 5.2), amp: rand(2.0, 3.6),
       t: rand(0, 10),
-      life: rand(FAIRY_LIFE[0], FAIRY_LIFE[1]),
+      life: roam ? rand(FAIRY_ROAM_LIFE[0], FAIRY_ROAM_LIFE[1])
+                 : rand(FAIRY_LIFE[0], FAIRY_LIFE[1]),
       maxLife: 0, trail: [], lastFire: now - FAIRY_GAP,
       rgb: boltRgb(),
       intensity: intensity || 1,
@@ -2779,23 +2786,25 @@
   // It takes over from painting entirely while both are down, and the second finger CANCELS the
   // stroke the first was making — otherwise a two-finger gesture leaves a smear of bursts behind
   // it from whichever finger landed first.
-  const FINGER_FAIRY_GAP = 320;    // ms between fairies while two fingers are held
   const down = new Map();          // pointerId -> {x, y}
-  let lastFingerFairy = 0;
+  let twoFingerDone = false;       // one launch per gesture, cleared when the fingers lift
 
-  function twoFingerFairies(ev) {
+  // ONCE PER GESTURE, not a stream while the fingers are down. The first cut fired every 320ms
+  // for as long as they were held, which made two fingers a second way of PAINTING — the thing
+  // one finger already does. Harold's correction was "start the fairy moving around on screen",
+  // and the word is start: you touch, they leave, and what happens next is theirs.
+  function twoFingerFairies() {
+    if (twoFingerDone) return;
     if (!fx) initVisuals();
     if (!fxShown() || !fx) return;
-    const now = performance.now();
-    if (now - lastFingerFairy < FINGER_FAIRY_GAP) return;
-    lastFingerFairy = now;
     const r = $('stage').getBoundingClientRect();
     if (!r.width || !r.height) return;
-    // One from each finger, so the pair of them is visible in what comes out.
+    twoFingerDone = true;
+    // One from each finger, so the pair of them is visible in what leaves.
     for (const pt of down.values()) {
       const x = (pt.x - r.left) / r.width, y = (pt.y - r.top) / r.height;
       if (x < 0 || x > 1 || y < 0 || y > 1) continue;
-      spawnFairy(x, y, PUNCH[readPunch()], readPalette());
+      spawnFairy(x, y, PUNCH[readPunch()], readPalette(), true);
     }
   }
 
@@ -2805,7 +2814,7 @@
       // The first finger's stroke is abandoned rather than finished: this is one gesture now.
       pressed = false; painting = true;      // painting stays true so the click cannot toggle
       clearTimeout(holdTimer);
-      twoFingerFairies(ev);
+      twoFingerFairies();
       return;
     }
     pressed = true; painting = false;
@@ -2815,7 +2824,8 @@
   });
   $('stage').addEventListener('pointermove', (ev) => {
     if (down.has(ev.pointerId)) { const p = down.get(ev.pointerId); p.x = ev.clientX; p.y = ev.clientY; }
-    if (down.size >= 2) { twoFingerFairies(ev); return; }
+    // Moving with two fingers down does nothing further: they have already gone.
+    if (down.size >= 2) return;
     if (!pressed) return;
     if (!painting && Math.hypot(ev.clientX - pressX, ev.clientY - pressY) < PAINT_MOVE) return;
     painting = true;
@@ -2824,6 +2834,9 @@
   for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) {
     $('stage').addEventListener(ev, (e) => {
       down.delete(e.pointerId);
+      // Armed again only when every finger is off, so one two-finger gesture is one launch
+      // however the fingers happen to lift.
+      if (!down.size) twoFingerDone = false;
       pressed = false;
       clearTimeout(holdTimer);
       // `painting` is deliberately NOT cleared here — the click handler clears it, and clearing
