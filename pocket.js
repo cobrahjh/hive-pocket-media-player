@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.40.0-beta';
+  const VERSION = '1.41.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2670,10 +2670,19 @@
   // an event, and long enough to change three other numbers with it — see below.
   const FAIRY_ROAM_LIFE = [28, 32];
   const FAIRY_GAP = 170;            // ms between one fairy's own bursts, when it is alone
-  // Eight, not four. At two per gesture, four meant a third two-finger launch quietly evicted
-  // the first pair — fine when they lived six seconds and nobody saw it, obvious at thirty.
-  const MAX_FAIRIES = 8;
-  const FAIRY_TRAIL = 16;           // points kept behind it
+  // Two. Eight was a swarm, and a swarm is the opposite of a wisp — the whole character of the
+  // thing is one light you can follow with your eye. It also restores the fire rate: the gap
+  // scales with the crowd, so two of them flash half as often as one, rather than an eighth.
+  //
+  // WITH BOTH SLOTS HELD BY WISPS YOU SENT OUT, the music adds none of its own — the eviction
+  // rule drops the beat-thrown one rather than yours, and at two slots that means all of them.
+  // Deliberate beats automatic, which is the right way round, but it does mean Fairy-on-the-beat
+  // goes quiet for thirty seconds after a two-finger launch. Wait it out or use one finger.
+  const MAX_FAIRIES = 2;
+  // A WISP IS MOSTLY TAIL. Sixteen points at sixty frames a second is a quarter-second smear
+  // that reads as a dot with a smudge; eighty is over a second of path, long enough to show the
+  // curve the thing is travelling and to keep showing it after the head has turned away.
+  const FAIRY_TRAIL = 80;
   const FAIRY_SPEED = [0.26, 0.46]; // fraction of the stage's diagonal per second
   let fairies = [];
 
@@ -2694,7 +2703,9 @@
       a: rand(0, Math.PI * 2),
       sp: rand(FAIRY_SPEED[0], FAIRY_SPEED[1]) * diag * (roam ? 0.72 : 1),
       // Two wander terms at different rates, so the path curves without ever repeating a shape.
-      w1: rand(1.4, 2.6), w2: rand(3.1, 5.2), amp: rand(2.0, 3.6),
+      // Slower, wider wander than a spark's. Fast wobble at this tail length knots the trail
+      // into a scribble; a wisp has to draw one long readable curve.
+      w1: rand(0.55, 1.15), w2: rand(1.4, 2.3), amp: rand(1.0, 1.8),
       t: rand(0, 10),
       life: roam ? rand(FAIRY_ROAM_LIFE[0], FAIRY_ROAM_LIFE[1])
                  : rand(FAIRY_LIFE[0], FAIRY_LIFE[1]),
@@ -2763,22 +2774,32 @@
 
   function drawFairies() {
     for (const f of fairies) {
-      const t = Math.max(0, Math.min(1, f.life / f.maxLife));
+      // The tail fades by AGE, not by the fairy's remaining life: a thirty-second wisp whose
+      // trail dimmed with its life would spend twenty of those seconds nearly invisible. Only
+      // the last second of its existence takes the whole thing down.
+      const t = Math.min(1, Math.max(0, f.life));
       const n = f.trail.length / 2;
-      for (let i = 0; i < n; i++) {
-        const k = (i + 1) / n;                     // 0 oldest, 1 newest
-        const r = Math.max(0.8, 2.6 * k);
-        boltCtx.globalAlpha = 0.5 * k * k * t;
-        boltCtx.fillStyle = 'rgb(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ')';
+      // Segments rather than dots. A line of circles is a dotted line at any spacing; joined
+      // segments with a tapering width are a tail, and round caps hide the joins.
+      boltCtx.strokeStyle = 'rgb(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ')';
+      for (let i = 1; i < n; i++) {
+        const k = i / n;                           // 0 oldest, 1 newest
+        // LINEAR, not squared. Squared alpha put 90% of an eighty-point tail below 0.05 opacity:
+        // the trail was long in memory and short on screen, which is the same as not being long.
+        // The width still tapers faster than the brightness, so it thins to a thread while
+        // staying visible all the way back — which is what reads as a wisp rather than a comet.
+        boltCtx.globalAlpha = 0.62 * k * t;
+        boltCtx.lineWidth = Math.max(0.4, 3.2 * k * k + 0.4);
         boltCtx.beginPath();
-        boltCtx.arc(f.trail[i * 2], f.trail[i * 2 + 1], r, 0, Math.PI * 2);
-        boltCtx.fill();
+        boltCtx.moveTo(f.trail[(i - 1) * 2], f.trail[(i - 1) * 2 + 1]);
+        boltCtx.lineTo(f.trail[i * 2], f.trail[i * 2 + 1]);
+        boltCtx.stroke();
       }
-      const core = Math.max(4, boltH * 0.012);
+      const core = Math.max(3, boltH * 0.008);
       try {
         const g = boltCtx.createRadialGradient(f.x, f.y, 0, f.x, f.y, core * 3.2);
-        g.addColorStop(0, 'rgba(255,255,255,' + (0.95 * t) + ')');
-        g.addColorStop(0.35, 'rgba(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ',' + (0.75 * t) + ')');
+        g.addColorStop(0, 'rgba(255,255,255,' + (0.9 * t) + ')');
+        g.addColorStop(0.35, 'rgba(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ',' + (0.6 * t) + ')');
         g.addColorStop(1, 'rgba(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ',0)');
         boltCtx.globalAlpha = 1;
         boltCtx.fillStyle = g;
@@ -3029,6 +3050,7 @@
     get bolts() { return fbolts.length; },
     get fairies() { return fairies.length; },
     get fairyRoamCount() { return fairies.filter((f) => f.roam).length; },
+    get fairyTrail() { return fairies.map((f) => f.trail.length / 2); },
     get promptWarning() { return promptWarning; },
     spawnFairy,
     strike,
