@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.30.0-beta';
+  const VERSION = '1.31.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1155,6 +1155,19 @@
 
   // ── Playback ─────────────────────────────────────────────────────────────────────────
   const TAP_NOTE = 'Tap play to start — the phone needs a tap before it makes sound.';
+  const MAX_FAIL_RUN = 5;      // consecutive unplayable tracks before it stops skipping
+  // A FILE CAN FAIL WITHOUT FIRING 'error'. A zero-byte or truncated track is decoded as a
+  // zero-length one: it "plays", ends immediately, and the ended handler calls next() — so the
+  // queue sprints through the whole folder and the error path, which has the bound on it, is
+  // never reached at all. Caught by a test whose fake files were 8 bytes: eleven tracks in
+  // 680ms and still accelerating.
+  //
+  // WHAT THIS COSTS, since it is a threshold: five REAL tracks under half a second each, in a
+  // row, will also stop the queue. That is a stinger or a sound-effect folder, and it stops with
+  // a sentence saying what happened and plays again the moment play is pressed — as against the
+  // alternative, which is grinding through several hundred files in a few seconds.
+  const MIN_REAL_PLAY_MS = 500;
+  let failRun = 0, playStartedAt = 0;
   function teardown() {
     if (!audio) return;
     try { audio.pause(); } catch (e) { /* already gone */ }
@@ -1171,9 +1184,23 @@
     $('audioHost').appendChild(audio);
     audio.addEventListener('timeupdate', paintTime);
     audio.addEventListener('durationchange', paintTime);
-    audio.addEventListener('play', () => { paintPlay(); startPump(); });
+    // NOT a place to clear failRun: this fires for a track that is about to end instantly too,
+    // which would reset the count on exactly the case the count exists for.
+    audio.addEventListener('play', () => { playStartedAt = performance.now(); paintPlay(); startPump(); });
     audio.addEventListener('pause', () => { paintPlay(); });
-    audio.addEventListener('ended', () => next(true));
+    audio.addEventListener('ended', () => {
+      const lasted = playStartedAt ? performance.now() - playStartedAt : 0;
+      if (lasted >= MIN_REAL_PLAY_MS) { failRun = 0; next(true); return; }
+      failRun++;
+      if (failRun >= MAX_FAIL_RUN) {
+        failRun = 0;
+        $('nowSub').textContent = 'Five tracks in a row ended the moment they started, so it '
+          + 'stopped here. They may be empty or cut short. Press play to carry on anyway.';
+        paintPlay();
+        return;
+      }
+      next(true);
+    });
     audio.addEventListener('error', () => {
       const t = queue[current];
       // A link that refused the CORS request: drop the request and take the audio without
@@ -1181,6 +1208,20 @@
       if (t && t.link && audio.corsTried) {
         $('nowSub').textContent = 'Playing without visuals — that host does not allow this page to read its audio.';
         play(current, { noCors: true });
+        return;
+      }
+      // A BOUND ON SKIPPING, and lazy loading is what made it matter. One unplayable file has
+      // always skipped to the next, which is right; a whole folder of them sprinted silently
+      // through every track in the queue, and now each of those skips also reads a file off the
+      // disk. A test with 169 undecodable files went through nine in 600ms and was not slowing
+      // down. So: after five in a row it stops and says so, rather than working through a
+      // hundred and sixty-nine failures on the person's behalf.
+      failRun++;
+      if (failRun >= MAX_FAIL_RUN) {
+        failRun = 0;
+        $('nowSub').textContent = 'Five tracks in a row would not play, so it stopped here rather '
+          + 'than working through the rest. The files may be a format this phone cannot read.';
+        paintPlay();
         return;
       }
       $('nowSub').textContent = t && t.link
@@ -1194,12 +1235,26 @@
   function play(i, opts) {
     const t = queue[i];
     if (!t) return;
+    // A track listed from the folder but not yet read off the disk. One file, now.
+    if (!t.file && t.handle) {
+      busy(true, 'Opening ' + t.name + '…');
+      fillFile(t).then((ok) => {
+        busy(false);
+        if (ok) play(i, opts);
+        else {
+          $('nowSub').textContent = 'That file is no longer where it was. Choose the folder again '
+            + 'to pick up what changed.';
+        }
+      });
+      return;
+    }
     // A track whose folder is remembered but not yet unlocked. Pressing it asks for the folder
     // and then plays — one gesture, where the person was already reaching.
     if (t.pending) {
-      folderNote('Reconnecting…');
+      busy(true, 'Reconnecting…');
       reconnectFolder().then(() => {
-        const again = queue.findIndex((x) => x.name === t.name && x.file);
+        busy(false);
+        const again = queue.findIndex((x) => x.name === t.name && (x.file || x.handle));
         if (again >= 0) play(again, opts);
       });
       return;
@@ -1356,7 +1411,19 @@
   // Plain <input type=file>. The folder-handle API that would let this be remembered is
   // desktop-only; see the note in index.html for why v1 does not copy the audio into storage
   // to fake it.
+  function readyNote(n) {
+    // The subtitle still read "Tap the folder button to choose music from this phone" with the
+    // music already listed underneath it — an instruction to do the thing that had just been
+    // done. It only ever changed on play, and until a folder could fill the queue in one tap
+    // nothing made that obvious.
+    if (current >= 0) return;
+    $('nowTitle').textContent = 'Ready';
+    $('nowSub').textContent = n + (n === 1 ? ' track' : ' tracks') + ' — press play, or pick one '
+      + 'from the list.';
+  }
+
   function adopt(files) {
+    failRun = 0;
     const picked = [...files].filter((f) => /^audio\//.test(f.type) || /\.(mp3|m4a|aac|ogg|opus|wav|flac)$/i.test(f.name));
     if (!picked.length) { $('libNote').textContent = 'No playable audio in that selection'; return; }
     // Revoke the old blob URLs before dropping them, or the files stay in memory for the life
@@ -1373,6 +1440,7 @@
     renderQueue();
     paintLib();
     paintFolder();
+    readyNote(picked.length);
   }
 
   // ── Remembering a folder ─────────────────────────────────────────────────────────────
@@ -1497,23 +1565,66 @@
     return out;
   }
 
+  // THE FIVE SECONDS Harold watched after granting access were this function calling getFile()
+  // on every handle before showing anything. 169 round trips to the file system, all of them to
+  // build blob URLs for tracks nobody had asked to play yet, and none of them needed until one
+  // is pressed. Now the queue is built from the HANDLES — which the listing already has — and a
+  // file is fetched at the moment it is played. The folder appears as soon as it is listed.
+  //
+  // What is left is the listing itself, which cannot be skipped and is not instant on a big
+  // folder, so it says what it is doing while it does it. Dead air that a person cannot tell
+  // from a hang is the thing to avoid, not the time itself.
   async function loadFolder(h) {
-    folderNote('Reading ' + (h.name || 'the folder') + '…');
+    busy(true, 'Looking through ' + (h.name || 'the folder') + '…');
     let handles;
     try { handles = await readFolder(h, 1, []); }
-    catch (e) { folderNote('That folder could not be read.', true); return; }
-    if (!handles.length) { folderNote('No playable audio in that folder.', true); return; }
-    const files = [];
-    for (const fh of handles) {
-      try { files.push(await fh.getFile()); } catch (e) { /* vanished since the listing */ }
-    }
-    if (!files.length) { folderNote('That folder could not be read.', true); return; }
-    adopt(files);
-    writeNames(files.map((f) => f.name.replace(/\.[^.]+$/, '')));
+    catch (e) { busy(false); folderNote('That folder could not be read.', true); return; }
+    if (!handles.length) { busy(false); folderNote('No playable audio in that folder.', true); return; }
+    busy(true, 'Found ' + handles.length + ' tracks…');
+    adoptHandles(handles);
+    writeNames(handles.map((fh) => fh.name.replace(/\.[^.]+$/, '')));
+    busy(false);
     const capped = handles.length >= FOLDER_MAX_FILES;
-    folderNote(files.length + ' from ' + (h.name || 'your folder')
+    folderNote(handles.length + ' from ' + (h.name || 'your folder')
       + (capped ? ' — the first ' + FOLDER_MAX_FILES + ', which is this app\'s limit.' : '.'));
     paintFolder();
+  }
+
+  // The same shape adopt() produces, minus the one expensive part. `url` is filled in on play.
+  function adoptHandles(handles) {
+    failRun = 0;                    // a new folder is a fresh start, whatever the last one did
+    readyNote(handles.length);
+    queue.forEach((t) => { if (t.url && !t.link) { try { URL.revokeObjectURL(t.url); } catch (e) {} } });
+    queue = handles
+      .slice()
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
+      .map((fh) => ({ name: fh.name.replace(/\.[^.]+$/, ''), handle: fh }))
+      .concat(readLinks().map(linkRow));
+    current = -1;
+    if (shuffleOn) buildOrder();
+    renderQueue();
+    paintLib();
+    paintFolder();
+  }
+
+  // One track, fetched the moment it is wanted. Returns false when the file has gone since the
+  // folder was listed, which is a thing that happens and must not look like the app breaking.
+  async function fillFile(t) {
+    if (t.file || !t.handle) return !!t.file;
+    try {
+      const f = await t.handle.getFile();
+      t.file = f;
+      t.url = URL.createObjectURL(f);
+      return true;
+    } catch (e) { return false; }
+  }
+
+  // The busy state, in the one place on screen that is always visible whatever the player size.
+  function busy(on, msg) {
+    const bar = $('busyBar');
+    if (!bar) return;
+    bar.hidden = !on;
+    if (on) $('busyText').textContent = msg || 'Working…';
   }
 
   function folderNote(msg, bad) {
@@ -1612,7 +1723,7 @@
   function showPending() {
     const names = readNames();
     if (!names.length) return;
-    if (queue.some((t) => t.file)) return;      // real files already loaded; leave them alone
+    if (queue.some((t) => t.file || t.handle)) return;   // a real folder is loaded; leave it alone
     queue = names.map((n) => ({ name: n, pending: true }))
       .concat(readLinks().map(linkRow));
     current = -1;
@@ -1668,7 +1779,7 @@
     }
     // The same offer on the stage, where someone who never opens the menu will see it.
     const bar = $('reconnectBar');
-    if (bar) bar.hidden = !(folderHandle && !queue.some((t) => t.file));
+    if (bar) bar.hidden = !(folderHandle && !queue.some((t) => t.file || t.handle));
     document.body.classList.toggle('has-pending', queue.some((t) => t.pending));
   }
 
@@ -2563,6 +2674,7 @@
     get punch() { return { name: readPunch(), value: PUNCH[readPunch()] }; },
     get playerHidden() { return readHidePlayer(); },
     get playerSize() { return readPlayer(); },
+    get failRun() { return failRun; },
     get quality() {
       return { chosen: readQualitySetting(), running: readQuality(),
                caps: QUALITY[readQuality()], fps: autoFps, seed: seedTier() };

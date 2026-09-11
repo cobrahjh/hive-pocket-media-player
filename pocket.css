@@ -564,3 +564,29 @@ body.player-mini .controls { margin-top: 0.35rem; }
 }
 /* The stage says the same thing while the queue is scrolled out of sight. */
 body.has-pending .reconnect-btn { border-style: solid; }
+
+
+/* ── the busy row ──
+   Sits under the transport with the reconnect bar, so it is in the same place whatever size the
+   player is and never moves the stage. */
+.busy {
+  flex: 0 0 auto; margin-top: 0.5rem;
+  display: flex; align-items: center; justify-content: center; gap: 0.55rem;
+  min-height: 40px; padding: 0 0.6rem;
+  border: 1px solid var(--line); border-radius: var(--radius);
+  font-size: 0.8rem; color: var(--muted);
+}
+.busy-ring {
+  width: 16px; height: 16px; flex: 0 0 auto;
+  border: 2px solid var(--line); border-top-color: var(--hive); border-radius: 50%;
+  animation: busy-spin 0.8s linear infinite;
+}
+@keyframes busy-spin { to { transform: rotate(360deg); } }
+.busy-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* REDUCED MOTION STILL NEEDS TO SHOW PROGRESS. A spinner that stops spinning is a spinner that
+   says the app has hung, so the ring is replaced by a pulse in brightness rather than removed —
+   the one thing it must never do is go still and silent. */
+@media (prefers-reduced-motion: reduce) {
+  .busy-ring { animation: busy-pulse 1.4s ease-in-out infinite; border-top-color: var(--hive); }
+  @keyframes busy-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+}

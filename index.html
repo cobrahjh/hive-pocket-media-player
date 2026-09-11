@@ -112,6 +112,14 @@
     </div>
   </div>
 
+  <!-- What the app is doing while it does it. A folder of a few hundred tracks takes seconds to
+       list and the permission prompt takes seconds of its own, and silence across that gap is
+       indistinguishable from a hang. role="status" so it is announced rather than only seen. -->
+  <div class="busy" id="busyBar" hidden role="status" aria-live="polite">
+    <span class="busy-ring" aria-hidden="true"></span>
+    <span class="busy-text" id="busyText">Working…</span>
+  </div>
+
   <!-- The one-tap way back to a remembered folder, for someone who never opens the menu. Hidden
        unless there IS a folder to reconnect and nothing from it is loaded. -->
   <div class="reconnect" id="reconnectBar" hidden>
