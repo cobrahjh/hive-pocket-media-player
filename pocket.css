@@ -442,11 +442,22 @@ html, body {
 .tut {
   position: fixed; inset: 0; z-index: 60;
   display: flex; align-items: flex-end; justify-content: center;
-  padding: 16px;
-  /* No background here: the RING carries the dimming through its shadow, so a step with no
-     target dims via .tut.plain below instead. */
-  pointer-events: auto;
+  /* SAFE-AREA INSETS, and this is the whole bug rather than a nicety. Installed to a home
+     screen there is no browser chrome, so a fixed overlay runs edge to edge and its bottom
+     16px land under the system gesture bar — where the phone eats the tap before the page
+     sees it. The card is the only way out of the tutorial, so an app that opened into it
+     could not be dismissed, could not be used, and looked completely dead. It never showed
+     in a browser tab because the browser's own bars absorb that strip. .app and .sheet had
+     always accounted for this; the newest fixed element did not. */
+  padding: max(16px, env(safe-area-inset-top)) 16px max(16px, calc(env(safe-area-inset-bottom) + 8px));
+  /* AND A SAFETY NET. Pointer events pass through everywhere except the card, so a tutorial
+     that somehow cannot be reached leaves the app working rather than bricked. A thing that
+     explains the app must never be able to disable it. It also makes the tutorial better:
+     "drag a finger across the stage and it paints" can be tried while the words are on screen
+     instead of after. */
+  pointer-events: none;
 }
+.tut-card, .tut-btn { pointer-events: auto; }
 .tut.plain { background: rgba(0, 0, 0, 0.72); }
 .tut.top { align-items: flex-start; }
 .tut-ring {

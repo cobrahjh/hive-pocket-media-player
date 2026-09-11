@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.27.0-beta';
+  const VERSION = '1.28.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1680,12 +1680,14 @@
   }
   function openSheet() {
     paintSheet();
+    if (!$('tut').hidden) requestAnimationFrame(tutPlace);
     $('sheetBack').hidden = false; $('sheet').hidden = false;
     $('menuBtn').setAttribute('aria-expanded', 'true');
     $('sheetClose').focus();
   }
   function closeSheet() {
     $('sheetBack').hidden = true; $('sheet').hidden = true;
+    if (!$('tut').hidden) requestAnimationFrame(tutPlace);
     $('menuBtn').setAttribute('aria-expanded', 'false');
     $('menuBtn').focus();
   }
@@ -1898,10 +1900,14 @@
   function tutPlace() {
     const step = TUT[tutAt];
     const ring = $('tutRing'), wrap = $('tut');
+    // THE SHEET OWNS THE BOTTOM OF THE SCREEN, always, and its Done button is the last thing in
+    // it. A card resting at the bottom sits exactly on top of that, so with the menu open the
+    // menu could not be closed. Caught by clicking Done in a test rather than by looking at it.
+    const sheetUp = !$('sheet').hidden;
     if (!step || !step.at) {
       ring.hidden = true;
       wrap.classList.add('plain');
-      wrap.classList.remove('top');
+      wrap.classList.toggle('top', sheetUp);
       return;
     }
     const el = document.querySelector(step.at);
@@ -1917,7 +1923,7 @@
     if (!onScreen) {
       ring.hidden = true;
       wrap.classList.add('plain');
-      wrap.classList.remove('top');
+      wrap.classList.toggle('top', sheetUp);
       return;
     }
     wrap.classList.remove('plain');
@@ -1927,9 +1933,10 @@
     ring.style.left = (r.left - pad) + 'px';
     ring.style.width = (r.width + pad * 2) + 'px';
     ring.style.height = (r.height + pad * 2) + 'px';
-    // Card to the opposite half, so it never sits on the thing it is pointing at.
+    // Card to the opposite half, so it never sits on the thing it is pointing at — unless the
+    // sheet is open, in which case the bottom is spoken for whatever the ring is doing.
     const mid = (r.top + r.height / 2) / Math.max(1, innerHeight);
-    wrap.classList.toggle('top', mid > 0.55);
+    wrap.classList.toggle('top', sheetUp || mid > 0.55);
   }
 
   function tutShow(i) {
