@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.33.0-beta';
+  const VERSION = '1.34.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1393,9 +1393,13 @@
     const playing = !!audio && !audio.paused;
     $('playIcon').hidden = playing;
     $('pauseIcon').hidden = !playing;
-    // The button is about the FILE player and says so, but the microphone is a second source and
-    // the label has to stop implying the app is idle while it is listening.
-    label('playBtn', playing ? 'Pause' : (micLive ? 'Play a track — the microphone is still listening' : 'Play'));
+    // 'Play' and 'Pause', unchanged since the first version. 1.32.0 replaced the idle label with
+    // a sentence about the microphone, on the theory that "Play" implies the app is doing
+    // nothing while it listens. Harold's answer was "buttons wrong, use existing logic" and he
+    // is right: this button has exactly one job, the label is what a screen reader announces on
+    // every focus, and a paragraph is not a button label. What the microphone is doing is said
+    // by the title above, which says "Listening", and by the microphone's own button.
+    label('playBtn', playing ? 'Pause' : 'Play');
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
     // THE MICROPHONE IS A REASON TO KEEP PUMPING, and leaving it out of this line was a freeze.
     // paintPlay() runs from a dozen places — every transport press, every pause event, hiding the
