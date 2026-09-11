@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.38.0-beta';
+  const VERSION = '1.39.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -714,6 +714,7 @@
   function paintStageHint() {
     const el = $('stageHint');
     if (!el) return;
+    if (promptWarning) return;      // a system dialog is up; nothing routine outranks that
     if (micLive || current >= 0) { el.hidden = true; return; }
     el.hidden = false;
     if (readHidePlayer()) {
@@ -1805,11 +1806,50 @@
     document.addEventListener('keydown', go, { capture: true });
   }
 
+  // SAY WHAT ANDROID IS ABOUT TO SAY, before it says it. Harold pressed PLAY and got a system
+  // sheet asking to "allow to copy and view the files" — the operating system's words for
+  // opening a folder, and alarming ones to meet with no warning when all you did was press play
+  // on your own music. The app knew the prompt was coming and said "Reconnecting…", which
+  // explains nothing about a dialog that sounds like it is about to take something.
+  //
+  // On the stage rather than in the now-playing line, because the now-playing line is hidden in
+  // the minimized player and this has to be readable at every size.
+  // A LATCH, not just an assignment. The first cut wrote the warning and something else
+  // repainted the hint within a few hundred milliseconds — the hint is written from half a dozen
+  // places and any of them wins by arriving later. Hunting the caller would fix this instance;
+  // the latch fixes the class, because a warning about a dialog that is ON SCREEN RIGHT NOW must
+  // outlive every routine repaint by definition. paintStageHint() returns early while it is set.
+  let promptWarning = false;
+
+  // A LATCH THAT CANNOT STICK. It outranks every routine repaint, which is the point, and that
+  // is exactly why it needs a way out that does not depend on the permission answering: a
+  // requestPermission() that never settles — a dialog dismissed by the system, a tab backgrounded
+  // mid-prompt — would otherwise freeze the stage hint on a warning about a dialog that is no
+  // longer there, for the life of the page. Twelve seconds is far longer than any real answer
+  // takes and far shorter than anyone would stare at a stale line.
+  let promptTimer = 0;
+
+  function sayPromptComing() {
+    const el = $('stageHint');
+    if (!el) return;
+    promptWarning = true;
+    clearTimeout(promptTimer);
+    promptTimer = setTimeout(() => { promptWarning = false; paintStageHint(); }, 12000);
+    el.hidden = false;
+    el.textContent = 'Android is about to ask to "copy and view files". That is its wording for '
+      + 'opening your music folder — nothing is copied anywhere, and this app has no way to send '
+      + 'anything. Allow it and your music comes straight back.';
+  }
+
   async function reconnectFolder() {
     if (!folderHandle) return;
+    sayPromptComing();
     let ok = 'denied';
     try { ok = await folderHandle.requestPermission({ mode: 'read' }); } catch (e) {}
     folderStateAfterAsk = ok;
+    promptWarning = false;          // answered: the hint goes back to whatever it should say
+    clearTimeout(promptTimer);
+    paintStageHint();
     if (ok === 'granted') askPersist();
     if (ok !== 'granted') { folderNote('This browser would not reconnect that folder. Choose it '
       + 'again to start over.', true); return; }
@@ -2963,6 +3003,7 @@
     tutStart, tutEnd,
     get bolts() { return fbolts.length; },
     get fairies() { return fairies.length; },
+    get promptWarning() { return promptWarning; },
     spawnFairy,
     strike,
     addLink,
