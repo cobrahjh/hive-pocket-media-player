@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.47.0-beta';
+  const VERSION = '1.48.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2092,6 +2092,17 @@
       const s = fx && fx.stats ? fx.stats() : null;
       if (s) add('drawing', 'parts ' + s.parts + ', background ' + s.ambient + ', bolts ' + fbolts.length);
     } catch (e) {}
+    // The whole life of the wisp layer on one line, which is the only honest way to answer
+    // "no wisps" from a phone nobody here can touch.
+    add('wisps', 'out ' + fairies.filter((f) => f.roam).length + ' of ' + fairies.length
+      + ', gestures ' + wispLog.gestures + ', sent ' + wispLog.spawned
+      + ', dismissed ' + wispLog.dismissed
+      + (wispLog.refused ? ', REFUSED: ' + wispLog.refused : '')
+      + ', reflows ' + wispLog.reflows + ', tails dropped ' + wispLog.tailDrops);
+    add('wisp box', boltW + 'x' + boltH + ' bitmap ' + (boltCv ? boltCv.width + 'x' + boltCv.height : 'none')
+      + ', canvas ' + (boltCv ? (boltCv.hidden ? 'hidden' : 'shown') : 'not found')
+      + ', loop ' + (boltRaf ? 'running' : 'stopped'));
+    add('wisp tails', JSON.stringify(fairies.map((f) => f.trail.length / 2)));
     L.push('');
     try { add('screen', innerWidth + 'x' + innerHeight + ' @' + (devicePixelRatio || 1)); } catch (e) {}
     add('reduced motion', reducedMotion());
@@ -2518,6 +2529,12 @@
   const BOLT_FLASH_MAX = 0.10;  // dimmer than the renderer's own 0.12 ceiling
   const MAX_FINGER_BOLTS = 5;
   let boltCv = null, boltCtx = null, boltDpr = 1, boltW = 0, boltH = 0;
+  // COUNTERS, NOT GUESSES. "No wisps" has at least five causes that look identical on a screen —
+  // the gesture never reached the app, it reached it and was refused because the effects layer
+  // is off, it spawned and the toggle cleared it, it spawned and a reflow cleared it, or it
+  // spawned and is drawing with no tail. Three releases were spent guessing at the folder
+  // question before one line from the phone settled it; this is that line, for this question.
+  const wispLog = { gestures: 0, refused: '', spawned: 0, dismissed: 0, reflows: 0, tailDrops: 0 };
   let fbolts = [], boltRaf = 0, boltLast = 0, lastBoltAt = 0, lastFlashAt = 0;
 
   const rand = (a, b) => a + Math.random() * (b - a);
@@ -2732,6 +2749,7 @@
     });
     const f = fairies[fairies.length - 1];
     f.roam = !!roam;
+    if (roam) wispLog.spawned++;
     f.maxLife = f.life;
     // OVER THE CAP, A BEAT-THROWN ONE GOES FIRST. A fairy someone deliberately sent out with two
     // fingers should not be evicted by one the music threw a moment later — against a wisp
@@ -2912,6 +2930,7 @@
       // is lost, stated: rotate the phone and the wisp keeps going but its history is gone, so
       // for about three seconds it is a shorter wisp than it was.
       const keepTrail = (sx / sy) > 0.7 && (sx / sy) < 1.43;
+      if (!keepTrail && fairies.length) wispLog.tailDrops++;
       for (const fa of fairies) {
         fa.x *= sx; fa.y *= sy;
         if (!keepTrail) { fa.trail.length = 0; }
@@ -2954,6 +2973,7 @@
   // need this.
   let reflowRaf = 0;
   function reflowSoon() {
+    wispLog.reflows++;
     if (reflowRaf) return;
     reflowRaf = requestAnimationFrame(() => { reflowRaf = 0; reflowBolts(); });
   }
@@ -3029,13 +3049,16 @@
   // and is not something you asked for, so it is not yours to dismiss.
   function twoFingerFairies() {
     if (twoFingerDone) return;
+    wispLog.gestures++;
     if (!fx) initVisuals();
-    if (!fxShown() || !fx) return;
+    if (!fxShown() || !fx) { wispLog.refused = fxShown() ? 'no renderer' : 'effects are off'; return; }
     const r = $('stage').getBoundingClientRect();
-    if (!r.width || !r.height) return;
+    if (!r.width || !r.height) { wispLog.refused = 'the stage measured 0'; return; }
+    wispLog.refused = '';
     twoFingerDone = true;
     if (fairies.some((f) => f.roam)) {
       for (let i = fairies.length - 1; i >= 0; i--) if (fairies[i].roam) fairies.splice(i, 1);
+      wispLog.dismissed++;
       return;
     }
     // One from each finger, so the pair of them is visible in what leaves.
@@ -3212,6 +3235,7 @@
       return { w: boltW, h: boltH,
                bw: boltCv ? boltCv.width : 0, bh: boltCv ? boltCv.height : 0, dpr: boltDpr };
     },
+    get wispLog() { return Object.assign({}, wispLog); },
     get fairyInBounds() {
       return fairies.every((f) => f.x >= -8 && f.x <= boltW + 8 && f.y >= -8 && f.y <= boltH + 8);
     },
