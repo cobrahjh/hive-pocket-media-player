@@ -253,7 +253,13 @@ html, body {
 }
 .row:last-child { border-bottom: 0; }
 .row .num { font-size: 0.66rem; color: var(--muted); width: 1.6rem; text-align: right; flex: 0 0 auto; }
-.row .nm { font-size: 0.85rem; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* flex: 1 is the whole fix. Without it the name is only as wide as its text, so the delete X
+   FOLLOWS it: on a short track name the X sat in the middle of the row, exactly where a thumb
+   lands when reaching for the track. Measured at 360px — a 13-character name put it at 210px
+   of a 344px row. It has been there since the queue was written and only became dangerous when
+   a folder could load 169 tracks at once. Now the name takes the room and the X is always at
+   the right edge, where a destructive control belongs. */
+.row .nm { font-size: 0.85rem; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row.on { background: hsl(38 92% 55% / 0.14); box-shadow: inset 2px 0 0 0 var(--hive); }
 .row.on .nm { color: var(--hive); font-weight: 600; }
 
@@ -538,3 +544,23 @@ body.player-mini .scrub { display: none; }
 /* Tighter, because the section is now one line and a button rather than four rows. */
 body.player-mini .now { margin-bottom: 0.1rem; }
 body.player-mini .controls { margin-top: 0.35rem; }
+
+
+/* ── a queue whose folder is remembered but not yet unlocked ──
+   Dimmed so it reads as waiting rather than as playing, and NOT disabled: pressing one of these
+   is what reconnects the folder, so anything that discouraged the press would defeat it. */
+/* Its own element rather than ::after inside .nm, which the name's own ellipsis would eat on
+   any track long enough to need one — and long names are the common case. */
+.row.locked .nm { opacity: 0.55; }
+.row.locked .num { opacity: 0.55; }
+/* order 2 with the delete pushed to 3, or the hint lands to the RIGHT of the delete button and
+   the destructive control stops being the last thing in the row. Measured, not assumed: the
+   first attempt put it last and moved the X inward by 77px. */
+.rowdel { order: 3; }
+.row.locked::before {
+  content: 'tap to unlock';
+  order: 2;
+  font-size: 0.64rem; color: var(--hive); opacity: 0.9; white-space: nowrap; flex: 0 0 auto;
+}
+/* The stage says the same thing while the queue is scrolled out of sight. */
+body.has-pending .reconnect-btn { border-style: solid; }

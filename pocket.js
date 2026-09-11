@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.29.0-beta';
+  const VERSION = '1.30.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1105,7 +1105,9 @@
     $('queueCount').textContent = queue.length ? queue.length + (queue.length === 1 ? ' track' : ' tracks') : '';
     queue.forEach((t, i) => {
       const li = document.createElement('li');
-      li.className = 'row' + (i === current ? ' on' : '');
+      // 'locked' is a look, not a disabled state: the row is fully pressable and pressing it is
+      // what unlocks it. Greying out the only way forward would be the opposite of the point.
+      li.className = 'row' + (i === current ? ' on' : '') + (t.pending ? ' locked' : '');
       const num = document.createElement('span');
       num.className = 'num mono';
       num.textContent = String(i + 1).padStart(2, '0');
@@ -1192,6 +1194,16 @@
   function play(i, opts) {
     const t = queue[i];
     if (!t) return;
+    // A track whose folder is remembered but not yet unlocked. Pressing it asks for the folder
+    // and then plays — one gesture, where the person was already reaching.
+    if (t.pending) {
+      folderNote('Reconnecting…');
+      reconnectFolder().then(() => {
+        const again = queue.findIndex((x) => x.name === t.name && x.file);
+        if (again >= 0) play(again, opts);
+      });
+      return;
+    }
     // A link saved back when this app had a YouTube player. It is kept rather than deleted, and
     // says so rather than failing as a silent dead track — a row that does nothing and explains
     // nothing is the worst of the three options.
@@ -1381,6 +1393,28 @@
   const DB_NAME = 'hive-pocket';
   const DB_STORE = 'handles';
   const DB_KEY = 'musicFolder';
+  // The track names, in localStorage, beside the handle in IndexedDB. Harold's own report
+  // settled what this is for: installed, storage persisted, and queryPermission STILL said
+  // 'prompt' on load — so on Android the grant does not survive a cold start however the app is
+  // installed, and one tap is the floor rather than a bug to chase. What can be fixed is what
+  // that tap feels like. Before this, reopening showed an empty app and a button: the 169 tracks
+  // that were there yesterday were simply gone, which reads as lost rather than as locked.
+  // The names cost nothing, come back instantly, and make the queue look like itself.
+  //
+  // NAMES ONLY. Never a path, never a URL, never anything that could rebuild where the music
+  // lives — those are the user's and stay in the handle the browser guards.
+  const NAMES_KEY = 'hive-pocket.foldernames';
+  const NAMES_MAX = 500;
+
+  function readNames() {
+    try {
+      const v = JSON.parse(localStorage.getItem(NAMES_KEY) || '[]');
+      return Array.isArray(v) ? v.filter((n) => typeof n === 'string').slice(0, NAMES_MAX) : [];
+    } catch (e) { return []; }
+  }
+  function writeNames(list) {
+    try { localStorage.setItem(NAMES_KEY, JSON.stringify(list.slice(0, NAMES_MAX))); } catch (e) {}
+  }
 
   // A folder can be enormous, and a phone reading ten thousand entries is a phone that has
   // stopped responding. WHAT STOPS BEING VISIBLE: past these limits the rest of the folder is
@@ -1475,6 +1509,7 @@
     }
     if (!files.length) { folderNote('That folder could not be read.', true); return; }
     adopt(files);
+    writeNames(files.map((f) => f.name.replace(/\.[^.]+$/, '')));
     const capped = handles.length >= FOLDER_MAX_FILES;
     folderNote(files.length + ' from ' + (h.name || 'your folder')
       + (capped ? ' — the first ' + FOLDER_MAX_FILES + ', which is this app\'s limit.' : '.'));
@@ -1542,6 +1577,8 @@
     folderStateAtLoad = state;
     paintFolder();
     if (state === 'granted') { await loadFolder(h); return; }
+    // Locked, not lost. The names come back now and the files come back on the tap.
+    showPending();
     if (state === 'denied') { folderNote('Your music folder is remembered, but this browser is '
       + 'blocking it. Choose it again to reconnect.', true); return; }
     // WHY THIS SENTENCE EXISTS. Harold reconnected and then had to reconnect again — correctly,
@@ -1569,8 +1606,27 @@
     await loadFolder(folderHandle);
   }
 
+  // The queue as it looks before the tap: every track by name, none of them playable yet, and
+  // pressing any of them IS the tap — so the reconnect is something you do by reaching for the
+  // music rather than a chore standing in front of it.
+  function showPending() {
+    const names = readNames();
+    if (!names.length) return;
+    if (queue.some((t) => t.file)) return;      // real files already loaded; leave them alone
+    queue = names.map((n) => ({ name: n, pending: true }))
+      .concat(readLinks().map(linkRow));
+    current = -1;
+    if (shuffleOn) buildOrder();
+    renderQueue();
+    paintLib();
+    paintFolder();
+  }
+
   async function forgetFolder() {
     folderHandle = null;
+    writeNames([]);
+    queue = queue.filter((t) => !t.pending);
+    renderQueue();
     try { await idbDel(DB_KEY); } catch (e) {}
     folderNote('Forgotten. The app will ask for music again next time.');
     paintFolder();
@@ -1613,6 +1669,7 @@
     // The same offer on the stage, where someone who never opens the menu will see it.
     const bar = $('reconnectBar');
     if (bar) bar.hidden = !(folderHandle && !queue.some((t) => t.file));
+    document.body.classList.toggle('has-pending', queue.some((t) => t.pending));
   }
 
   function saveNote(msg, bad) {
@@ -1761,7 +1818,12 @@
     L.push('');
     add('listening', micLive);
     add('listen on open', readMicAuto());
-    add('audio graph', !!(ctx && analyser && srcNode));
+    // Named for what it is. It reported `false` on a healthy app that was listening to the room
+    // and drawing at 60 frames a second, because this graph is the FILE path and the microphone
+    // has its own — so the one line in a bug report that looked like a smoking gun was not one.
+    // A diagnostic that reads as a fault when nothing is wrong costs more than a missing line.
+    add('file audio graph', !!(ctx && analyser && srcNode)
+      ? 'built' : (micLive ? 'not built (microphone in use, which has its own)' : 'not built'));
     add('screen awake', !!wakeLock);
     add('queue length', queue.length);          // a count, never the contents
     add('saved links', readLinks().length);     // likewise
@@ -2468,6 +2530,9 @@
   // Not shown when the microphone is about to open itself: that path asks for a permission, and
   // a permission prompt landing under a tutorial card is the worst first second this app could
   // offer. Those people get it from Show me around instead.
+  // Before resumeFolder even runs: the names are local and instant, and an app that opens with
+  // its queue already on screen never has the empty moment that reads as "it lost my music".
+  showPending();
   paintFolder();
   paintInstall();
   try {
