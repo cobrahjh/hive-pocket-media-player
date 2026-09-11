@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.35.0-beta';
+  const VERSION = '1.36.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -999,6 +999,11 @@
     keepAwake(false);
     micNote('Not listening.');
     micPaint();
+    // The transport shows listening as a running state now, so it has to be told when listening
+    // ends. Without this the pause bars stayed on a stopped app — a stale icon introduced by the
+    // very change meant to stop the icon being wrong, and caught one test later.
+    paintPlay();
+    paintStageHint();
   }
 
   // ── Bands ────────────────────────────────────────────────────────────────────────────
@@ -1367,6 +1372,8 @@
   }
 
   function toggle() {
+    // Matches the icon exactly: whatever the pause bars are showing for is what stops.
+    if (micLive && !(audio && !audio.paused)) { micStop(); return; }
     if (!audio || current < 0) { if (queue.length) play(0); return; }
     // .then(started, onRefused) and NOT .then(started).catch(onRefused). The two read the same
     // and are not: a trailing .catch also catches whatever `started` throws, so a renderer that
@@ -1414,15 +1421,28 @@
   // ── Painting ─────────────────────────────────────────────────────────────────────────
   function paintPlay() {
     const playing = !!audio && !audio.paused;
-    $('playIcon').hidden = playing;
-    $('pauseIcon').hidden = !playing;
+    // LISTENING IS PLAYING, as far as this button is concerned. With "start listening when the
+    // app opens" on, the app comes up drawing the room and the transport showed a play triangle
+    // — the icon for "nothing is happening" — from the start and for as long as you left it.
+    // Harold reported it twice; my first two attempts read it as a wrong label and as a stopped
+    // pump, and both were something else that also needed fixing.
+    //
+    // The button now means what its icon has always meant: the app is producing something, press
+    // to stop. A file playing pauses the file; the microphone open with no file stops listening.
+    // Two sources, one button, and the existing pause icon rather than a new control or a
+    // sentence bolted onto the label.
+    const running = playing || micLive;
+    $('playIcon').hidden = running;
+    $('pauseIcon').hidden = !running;
     // 'Play' and 'Pause', unchanged since the first version. 1.32.0 replaced the idle label with
     // a sentence about the microphone, on the theory that "Play" implies the app is doing
     // nothing while it listens. Harold's answer was "buttons wrong, use existing logic" and he
     // is right: this button has exactly one job, the label is what a screen reader announces on
     // every focus, and a paragraph is not a button label. What the microphone is doing is said
     // by the title above, which says "Listening", and by the microphone's own button.
-    label('playBtn', playing ? 'Pause' : 'Play');
+    label('playBtn', playing ? 'Pause' : (micLive ? 'Stop listening' : 'Play'));
+    // The lock screen follows the FILE only. A phone showing "playing" for a microphone with no
+    // track behind it gives the notification nothing to name and its buttons nothing to do.
     if ('mediaSession' in navigator) navigator.mediaSession.playbackState = playing ? 'playing' : 'paused';
     // THE MICROPHONE IS A REASON TO KEEP PUMPING, and leaving it out of this line was a freeze.
     // paintPlay() runs from a dozen places — every transport press, every pause event, hiding the
