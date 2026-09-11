@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.41.0-beta';
+  const VERSION = '1.42.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2680,9 +2680,15 @@
   // goes quiet for thirty seconds after a two-finger launch. Wait it out or use one finger.
   const MAX_FAIRIES = 2;
   // A WISP IS MOSTLY TAIL. Sixteen points at sixty frames a second is a quarter-second smear
-  // that reads as a dot with a smudge; eighty is over a second of path, long enough to show the
-  // curve the thing is travelling and to keep showing it after the head has turned away.
-  const FAIRY_TRAIL = 80;
+  // that reads as a dot with a smudge; eighty was over a second; this is about three and a half,
+  // which at a wisp's drift is more than a screen's width of path behind it. Long enough that
+  // the tail curves back over itself and the shape of where it has been is the thing you watch.
+  const FAIRY_TRAIL = 210;
+  // Drawn in BANDS, not one stroke per point, and this is what makes the length affordable. Two
+  // hundred and ten segments times two wisps is 420 stroke calls a frame, 25,000 a second, on a
+  // phone. Ten bands of twenty-one points each is twenty calls a frame for the same picture: the
+  // taper goes from smooth to stepped across ten steps, which at this length nobody can see.
+  const FAIRY_BANDS = 10;
   const FAIRY_SPEED = [0.26, 0.46]; // fraction of the stage's diagonal per second
   let fairies = [];
 
@@ -2782,17 +2788,23 @@
       // Segments rather than dots. A line of circles is a dotted line at any spacing; joined
       // segments with a tapering width are a tail, and round caps hide the joins.
       boltCtx.strokeStyle = 'rgb(' + f.rgb[0] + ',' + f.rgb[1] + ',' + f.rgb[2] + ')';
-      for (let i = 1; i < n; i++) {
-        const k = i / n;                           // 0 oldest, 1 newest
-        // LINEAR, not squared. Squared alpha put 90% of an eighty-point tail below 0.05 opacity:
-        // the trail was long in memory and short on screen, which is the same as not being long.
-        // The width still tapers faster than the brightness, so it thins to a thread while
-        // staying visible all the way back — which is what reads as a wisp rather than a comet.
+      const per = Math.max(2, Math.ceil(n / FAIRY_BANDS));
+      for (let b = 0; b < FAIRY_BANDS; b++) {
+        const lo = b * per;
+        // +1 so consecutive bands share a point; without the overlap there is a visible gap at
+        // every band boundary and the tail reads as a dashed line.
+        const hi = Math.min(n, lo + per + 1);
+        if (hi - lo < 2) continue;
+        const k = (b + 1) / FAIRY_BANDS;            // 0 oldest, 1 newest
+        // LINEAR, not squared. Squared alpha put 90% of a long tail below 0.05 opacity: the trail
+        // was long in memory and short on screen, which is the same as not being long. The width
+        // still tapers faster than the brightness, so it thins to a thread while staying visible
+        // all the way back — which is what reads as a wisp rather than a comet.
         boltCtx.globalAlpha = 0.62 * k * t;
         boltCtx.lineWidth = Math.max(0.4, 3.2 * k * k + 0.4);
         boltCtx.beginPath();
-        boltCtx.moveTo(f.trail[(i - 1) * 2], f.trail[(i - 1) * 2 + 1]);
-        boltCtx.lineTo(f.trail[i * 2], f.trail[i * 2 + 1]);
+        boltCtx.moveTo(f.trail[lo * 2], f.trail[lo * 2 + 1]);
+        for (let i = lo + 1; i < hi; i++) boltCtx.lineTo(f.trail[i * 2], f.trail[i * 2 + 1]);
         boltCtx.stroke();
       }
       const core = Math.max(3, boltH * 0.008);
