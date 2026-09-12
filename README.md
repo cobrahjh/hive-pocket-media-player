@@ -5,7 +5,24 @@ A music player with live visuals that runs entirely on your phone.
 **https://pocket.kinghive.online**
 
 No account, no server, no network at all after the first load. Open it, tap the folder button,
-pick some audio — then use your browser's **Install app** or **Add to Home screen**.
+pick some audio.
+
+## Put it on your home screen
+
+Open the page above on the phone, then use the **browser's own menu** — the three dots in
+Chrome, the share button in Safari — and choose **Install app** or **Add to Home screen**.
+Settings also grows an **Add to home screen** button, but only once Chrome has decided the site
+qualifies, which can take a visit or two; the menu route always works.
+
+Installing buys you the browser bars going away, and nothing else. It does **not** stop the app
+asking for your music folder after a cold start — Chrome documents that it should, and on a real
+Android phone it asks anyway.
+
+**If you installed it from the old `cobrahjh.github.io` address**, install it again from this one
+and delete the old icon by long-pressing it. A browser keeps storage per origin, so the old
+install's remembered folder, track names and settings do not come with it: pick the folder once
+and you are back. Tapping the old icon now redirects here, which lands outside that install's own
+scope and opens a browser tab instead of the app.
 
 ## What it does
 

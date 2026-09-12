@@ -503,6 +503,16 @@
         <button class="sheet-btn" id="installBtn" type="button"
                 title="Add Hive Pocket to your home screen">Add to home screen</button>
       </div>
+      <!-- SHOWN WHEN THE BUTTON ABOVE IS NOT. Chrome only fires beforeinstallprompt once it has
+           decided the site qualifies, which can take a visit or two, and iOS never fires it at
+           all — so the button is absent exactly when someone is most likely to be looking for
+           it. The manual route always works and is two taps. -->
+      <div id="installHow" hidden>
+        <p class="set-note"><b>To put this on your home screen</b>, open your browser's own menu
+          — the three dots in Chrome, the share button in Safari — and choose <b>Install app</b>
+          or <b>Add to Home screen</b>. A button appears here instead once Chrome offers one,
+          which can take a visit or two.</p>
+      </div>
     </div>
 
     <div class="set">

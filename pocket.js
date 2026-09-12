@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.52.0-beta';
+  const VERSION = '1.53.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1960,9 +1960,15 @@
   function paintInstall() {
     const row = $('installRow');
     if (!row) return;
-    // Shown when there is something to gain from it: an install makes the folder permission
-    // permanent, so the offer belongs next to the folder and not on its own.
-    setHidden(row, installed() || !installEvent);
+    // The button needs Chrome to have handed over a beforeinstallprompt, which it does once it
+    // has decided the site qualifies — a visit or two, sometimes — and which iOS never does at
+    // all. So the button was missing exactly when someone was most likely to be hunting for it,
+    // and the app said nothing. THE INSTRUCTIONS SHOW WHENEVER THE BUTTON CANNOT: not installed,
+    // no prompt in hand. Installed, both are pointless and both go.
+    const can = !!installEvent;
+    const already = installed();
+    setHidden(row, already || !can);
+    setHidden($('installHow'), already || can);
   }
 
   async function doInstall() {
