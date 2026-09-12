@@ -49,14 +49,33 @@ The full description is indexed by Play, so it is written as prose rather than a
 
 Roughly 1,500 characters, well inside the limit, with room to add later.
 
-## Assets needed
+## Assets — all in `play/assets/`
 
-- **App icon** 512 × 512. `icon-512.png` already exists.
-- **Feature graphic** 1024 × 500. Does not exist yet — this is the one real gap. Keep text away
-  from the edges; Play crops it at several sizes.
-- **Phone screenshots.** Use the real thing: the stage full of effects, the wisps mid-drift with
-  their tails, the Look picker, and the queue. The first one is what people see on the search
-  card, so it should be the stage, not a menu.
+- **App icon** 512 × 512: `icon-512.png` at the repo root.
+- **Feature graphic** 1024 × 500: `feature-graphic-1024x500.png`. The background is a real frame
+  of the stage with music playing, taken at banner aspect and mirrored so the busy bars sit under
+  the right half and the wordmark over the quiet half. Everything that must survive cropping sits
+  inside a 10% safe area. 24-bit RGB, no alpha, as Play requires.
+- **Phone screenshots**, six, 1080 × 1920 — the classic phone size and unambiguously inside Play's
+  rule that the long side may be no more than twice the short side. 24-bit RGB. Every one is the
+  real app drawing real audio through the microphone or from a loaded file; nothing is a mockup.
+
+      screenshot-01-hive-player.png        playing a track, pause showing, queue populated
+      screenshot-02-fullscreen-freeze.png  Deep freeze, full screen, line equalizer and a nova
+      screenshot-03-wisps-garden.png       two wisps mid-drift with their tails, hearts, dots eq
+      screenshot-04-paint-bonfire.png      Bonfire, a finger painting, wisps still roaming
+      screenshot-05-settings-drive.png     the Look picker and settings
+      screenshot-06-advanced.png           the Advanced group
+
+  Upload them in that order: the first is what people see on the search card, and it is the
+  stage rather than a menu.
+
+**How they were made**, so they can be remade after a visual change: a headless Chromium at
+360 × 640 with a device scale of 3, a generated 40-second track fed through Chrome's fake
+microphone (`--use-file-for-fake-audio-capture`), and the app's own Look picker driven between
+shots. The tutorial is skipped and the queue for shot 1 is six real WAV files picked through the
+file input, so no row reads *tap to unlock* — a locked queue in a store screenshot reads as a
+paywall.
 
 ## The honest bit
 
