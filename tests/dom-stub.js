@@ -32,15 +32,54 @@ function fire(target, type, ev) {
   }
 }
 
+/**
+ * The ids that are <svg> in the real index.html, read from the real index.html rather than
+ * listed here, so an svg added tomorrow is modelled without anyone remembering to come back.
+ *
+ * WHY THE STUB HAS TO KNOW. `hidden` is an IDL attribute on HTMLElement and SVGElement does not
+ * have it, so `svg.hidden = true` sets a JavaScript property and writes no attribute, and the
+ * [hidden] CSS rule never matches. A stub where every element is a plain object with a `hidden`
+ * field models the case that works and cannot see the case that does not — which is how the
+ * transport's play/pause glyphs stayed frozen at their markup defaults through three reports and
+ * two correct fixes, with every suite green.
+ */
+const SVG_IDS = new Set();
+/**
+ * Ids the markup starts HIDDEN. Seeded for the same reason as the svg list: an element whose
+ * initial state the stub gets wrong lets a test assert a transition that never happened. The
+ * play/pause pair is exactly that - the triangle starts shown and the bars start hidden, and a
+ * stub where both start shown reports "both drawn" on a healthy build.
+ */
+const HIDDEN_IDS = new Set();
+(() => {
+  let html;
+  try { html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8'); }
+  catch (e) { return; }   // no markup to read; every element is an HTML one that starts shown
+  const tag = /<([a-zA-Z][\w-]*)\b([^>]*)>/g;
+  let m;
+  while ((m = tag.exec(html))) {
+    const name = m[1].toLowerCase();
+    const attrs = m[2];
+    const id = /\bid="([^"]+)"/.exec(attrs);
+    if (!id) continue;
+    if (name === 'svg') SVG_IDS.add(id[1]);
+    // NOT aria-hidden. \b treats the dash as a boundary, so a plain \bhidden matches inside it
+    // and seeded the play triangle - which carries aria-hidden and no hidden - as starting
+    // hidden, reporting "both glyphs drawn" on a healthy build.
+    if (/(?<![\w-])hidden(?=[\s/>=])|(?<![\w-])hidden$/.test(attrs)) HIDDEN_IDS.add(id[1]);
+  }
+})();
+
 /** An element that answers everything the app asks of one, and remembers what it was told. */
 function el(id) {
   const classes = new Set();
+  const isSvg = SVG_IDS.has(id);
   const e = {
     id,
-    tagName: 'DIV',
+    tagName: isSvg ? 'svg' : 'DIV',
+    isSvg,
     textContent: '',
     value: '',
-    hidden: false,
     disabled: false,
     className: '',
     style: {},
@@ -53,6 +92,12 @@ function el(id) {
     setAttribute(k, v) { e.attrs[k] = v; },
     removeAttribute(k) { delete e.attrs[k]; },
     getAttribute(k) { return k in e.attrs ? e.attrs[k] : null; },
+    hasAttribute(k) { return k in e.attrs; },
+    toggleAttribute(k, on) {
+      const want = on === undefined ? !(k in e.attrs) : !!on;
+      if (want) e.attrs[k] = ''; else delete e.attrs[k];
+      return want;
+    },
     appendChild(c) { e.children.push(c); return c; },
     append(...cs) { e.children.push(...cs); },
     remove: noop,
@@ -75,8 +120,25 @@ function el(id) {
     getBoundingClientRect: () => e.rect,
     getContext: () => new Proxy({}, { get: () => noop, set: () => true }),
   };
+  // `hidden` behaves the way the browser's does. On an HTML element it IS the content attribute,
+  // reflected both ways. On an <svg> it is a plain property that nothing else reads — assigning
+  // it changes no attribute and therefore changes nothing on screen, which is the bug this stub
+  // could not previously express.
+  if (HIDDEN_IDS.has(id)) e.attrs.hidden = '';
+  if (isSvg) {
+    e.hidden = 'hidden' in e.attrs;    // a dead property, seeded to match the markup once
+  } else {
+    Object.defineProperty(e, 'hidden', {
+      enumerable: true,
+      get() { return 'hidden' in e.attrs; },
+      set(v) { if (v) e.attrs.hidden = ''; else delete e.attrs.hidden; },
+    });
+  }
   return e;
 }
+
+/** What CSS sees: the content attribute, whatever the element is. This is the honest question. */
+function shown(e) { return !(e && e.attrs && 'hidden' in e.attrs); }
 
 /**
  * Load the app.
@@ -115,13 +177,22 @@ function boot(opts) {
   media.duration = 30;
   media.src = '';
   let playCalls = 0;
+  // THE REAL ELEMENT FIRES THESE AND THE APP LISTENS FOR THEM. paintPlay() runs from the play
+  // and pause handlers, so a stub that changes `paused` silently leaves the transport showing
+  // whatever it showed before - and a suite written against that stub asserts a button state
+  // the browser would never have produced.
   media.play = () => {
     playCalls++;
     if (o.blockFirstPlay && playCalls === 1) return Promise.reject(new Error('NotAllowedError'));
     media.paused = false;
+    fire(media, 'play');
     return Promise.resolve();
   };
-  media.pause = () => { media.paused = true; };
+  media.pause = () => {
+    const was = media.paused;
+    media.paused = true;
+    if (!was) fire(media, 'pause');
+  };
   media.load = () => { media.paused = true; media.currentTime = 0; };
 
   // A stand-in for YouTube's player. It records what it was asked to load and lets a test drive
@@ -164,6 +235,13 @@ function boot(opts) {
   // browser would refuse it - and a browser refuses it by answering 'denied' while showing
   // nothing, which from the app's side is indistinguishable from a person saying no. The count
   // is the only way a test can tell "asked and refused" from "never asked".
+  // A microphone. opts.mic === 'refused' is a phone that says no; anything else grants it.
+  // Tracks are counted stopped, because micStop() stopping them is the difference between a
+  // recording indicator that goes away and one that does not.
+  const mic = { asks: 0, sources: 0, stopped: 0 };
+  const micStream = {
+    getTracks: () => [{ stop: () => { mic.stopped++; }, kind: 'audio' }],
+  };
   const folder = { asks: 0, queries: 0, handle: null };
   if (o.folder) {
     const fo = o.folder;
@@ -287,6 +365,11 @@ function boot(opts) {
     // A plain http origin, so worker registration is skipped — the worker is not what these
     // suites are about, and registering one would need a second set of stubs.
     location: { protocol: 'http:', hostname: '127.0.0.1', href: 'http://127.0.0.1/' },
+    // The browser is the authority on this and the app asks it rather than parsing the protocol.
+    // 127.0.0.1 IS a secure context in every browser, so this is what a real one would answer -
+    // and without it micStart() refuses before it reaches the microphone, which is why nothing
+    // in this folder had ever opened one.
+    isSecureContext: true,
     requestAnimationFrame: (fn) => {
       if (!o.frames) return 0;
       rafs.push({ id: ++rafId, fn });
@@ -306,6 +389,13 @@ function boot(opts) {
       mediaSession: { metadata: null, playbackState: 'none', setActionHandler: noop },
       serviceWorker: { register: () => Promise.resolve() },
       userActivation: activation,
+      mediaDevices: {
+        getUserMedia: () => {
+          mic.asks++;
+          if (o.mic === 'refused') return Promise.reject(new Error('NotAllowedError'));
+          return Promise.resolve(micStream);
+        },
+      },
       storage: { persisted: () => Promise.resolve(false), persist: () => Promise.resolve(false) },
     },
     indexedDB: fakeIndexedDB,
@@ -320,6 +410,9 @@ function boot(opts) {
         connect: noop, getByteFrequencyData: noop,
       });
       this.createMediaElementSource = () => ({ connect: noop });
+      // The microphone's own analyser comes from here too. Counted so a test can assert the one
+      // structural promise this app makes - that the mic's analyser is never the file's.
+      this.createMediaStreamSource = () => { mic.sources++; return { connect: noop }; };
     },
     // Counted, not drawn: whether a renderer was told to re-measure after the stage changed
     // size is exactly the thing that is invisible in a screenshot and easy to forget in code.
@@ -400,6 +493,7 @@ function boot(opts) {
     now: () => clock,
     pending: () => rafs.length,
     folder,
+    mic,
     /** What navigator.userActivation.isActive reports from now on. */
     activation(on) { activation.isActive = on === true; },
     /** Dispatch to the listeners the app registered on document for `type`. */
@@ -437,4 +531,4 @@ function makeCheck() {
   return state;
 }
 
-module.exports = { boot, fire, el, pick, settle, makeCheck, noop };
+module.exports = { boot, fire, el, pick, settle, makeCheck, noop, shown };

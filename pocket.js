@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.50.0-beta';
+  const VERSION = '1.51.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -683,8 +683,8 @@
       if (!el) continue;
       // The link row has its own hidden state and must not be forced open when the player
       // comes back — it is a disclosure, closed by default.
-      if (sel === '#linkRow') { if (off) el.hidden = true; continue; }
-      el.hidden = off;
+      if (sel === '#linkRow') { if (off) setHidden(el, true); continue; }
+      setHidden(el, off);
     }
     // One class, because what minimized hides is a LAYOUT question and belongs in the stylesheet
     // rather than in six more querySelector lines here.
@@ -715,8 +715,8 @@
     const el = $('stageHint');
     if (!el) return;
     if (promptWarning) return;      // a system dialog is up; nothing routine outranks that
-    if (micLive || current >= 0) { el.hidden = true; return; }
-    el.hidden = false;
+    if (micLive || current >= 0) { setHidden(el, true); return; }
+    setHidden(el, false);
     if (readHidePlayer()) {
       el.textContent = 'Turn on the microphone in the menu — or just drag a finger across here.';
       return;
@@ -1061,11 +1061,11 @@
   // One place decides what is on the stage, so the menu and the transport's effects button can
   // never disagree about what you are looking at.
   function paintStage() {
-    $('eqCanvas').hidden = !eqShown();
-    $('fxCanvas').hidden = !fxShown();
+    setHidden($('eqCanvas'), !eqShown());
+    setHidden($('fxCanvas'), !fxShown());
     // The bolt layer belongs to the effects half and hides with it. Hidden, not transparent: a
     // canvas nobody can see is still a canvas, and this one stops its own loop when it empties.
-    $('boltCanvas').hidden = !fxShown();
+    setHidden($('boltCanvas'), !fxShown());
     if ($('boltCanvas').hidden) clearBolts();
     {
       if (eq && eqShown()) eq.resize();
@@ -1114,7 +1114,7 @@
     // The way back has to be discoverable. It is the same tap, which is not obvious, so say so
     // once and then get out of the way of the thing the person went full screen to look at.
     clearTimeout(tipTimer);
-    $('coverTip').hidden = !covered;
+    setHidden($('coverTip'), !covered);
     $('coverTip').style.opacity = '';
     if (covered) tipTimer = setTimeout(() => { $('coverTip').style.opacity = '0'; }, 2600);
     if (covered) nativeOn(); else nativeOff();
@@ -1326,7 +1326,7 @@
     el.src = t.url;
     $('nowTitle').textContent = t.name;
     $('nowSub').textContent = 'From this device';
-    $('stageHint').hidden = true;
+    setHidden($('stageHint'), true);
     renderQueue();
     // The graph is built on a real gesture-driven play, which is when a phone will allow it.
     // Two-argument form, deliberately: with a trailing .catch, a throw inside started() would
@@ -1433,8 +1433,8 @@
     // Two sources, one button, and the existing pause icon rather than a new control or a
     // sentence bolted onto the label.
     const running = playing || micLive;
-    $('playIcon').hidden = running;
-    $('pauseIcon').hidden = !running;
+    setHidden($('playIcon'), running);
+    setHidden($('pauseIcon'), !running);
     // 'Play' and 'Pause', unchanged since the first version. 1.32.0 replaced the idle label with
     // a sentence about the microphone, on the theory that "Play" implies the app is doing
     // nothing while it listens. Harold's answer was "buttons wrong, use existing logic" and he
@@ -1561,6 +1561,34 @@
   // not loaded, and the app says how many it took rather than pretending that was all of them.
   const FOLDER_MAX_FILES = 500;
   const FOLDER_MAX_DEPTH = 3;
+
+  // `el.hidden = x` IS NOT A WAY TO HIDE AN SVG, and that is the whole of "the play button never
+  // shows pause". `hidden` is an IDL attribute defined on HTMLElement; SVGElement does not have
+  // it — measured, not assumed: `'hidden' in SVGElement.prototype` is false in Chrome. So on an
+  // <svg>, `.hidden = true` quietly creates a plain JavaScript property, the hidden CONTENT
+  // attribute is never written, and the [hidden] rule in the stylesheet never matches.
+  //
+  // The transport's two glyphs are <svg>. playIcon has no hidden attribute in the markup and
+  // pauseIcon has one, so every paintPlay() since they were added has set a property nothing
+  // reads, and the pair has been frozen at its markup defaults: the triangle always drawn, the
+  // bars never. Harold reported it as "buttons wrong" across 1.34.0, 1.36.0 and again now; the
+  // label fix and the listening-is-playing fix were both right and both invisible, because the
+  // thing they were driving was not connected to anything.
+  //
+  // AND A CORRECT FIX IS WHAT MADE IT LOOK DEAD. An earlier release found both glyphs drawing at
+  // once and added `[hidden] { display: none !important }` so the attribute would beat the
+  // `.ctl svg` display rule. That was right, and it turned "both showing" into "one showing,
+  // forever" — which reads as a button that does not respond rather than as a bug.
+  //
+  // toggleAttribute writes the content attribute, which is what CSS reads, on every Element.
+  // Used for every hide in this file rather than only on the two glyphs: the next SVG someone
+  // hides should not have to rediscover this.
+  function setHidden(el, on) {
+    if (!el) return;
+    if (el.toggleAttribute) el.toggleAttribute('hidden', !!on);
+    else if (on) el.setAttribute('hidden', ''); else el.removeAttribute('hidden');
+  }
+  const isHidden = (el) => !!(el && el.hasAttribute && el.hasAttribute('hidden'));
 
   const canRemember = () => typeof window.showDirectoryPicker === 'function';
 
@@ -1696,7 +1724,7 @@
   function busy(on, msg) {
     const bar = $('busyBar');
     if (!bar) return;
-    bar.hidden = !on;
+    setHidden(bar, !on);
     if (on) $('busyText').textContent = msg || 'Working…';
   }
 
@@ -1704,7 +1732,7 @@
     const el = $('folderNote');
     if (!el) return;
     el.textContent = msg || '';
-    el.hidden = !msg;
+    setHidden(el, !msg);
     el.classList.toggle('bad', !!bad);
   }
 
@@ -1865,7 +1893,7 @@
     promptWarning = true;
     clearTimeout(promptTimer);
     promptTimer = setTimeout(() => { promptWarning = false; paintStageHint(); }, 12000);
-    el.hidden = false;
+    setHidden(el, false);
     el.textContent = 'Android is about to ask to "copy and view files". That is its wording for '
       + 'opening your music folder — nothing is copied anywhere, and this app has no way to send '
       + 'anything. Allow it and your music comes straight back.';
@@ -1934,7 +1962,7 @@
     if (!row) return;
     // Shown when there is something to gain from it: an install makes the folder permission
     // permanent, so the offer belongs next to the folder and not on its own.
-    row.hidden = installed() || !installEvent;
+    setHidden(row, installed() || !installEvent);
   }
 
   async function doInstall() {
@@ -1947,9 +1975,9 @@
 
   function paintFolder() {
     const grp = $('folderGrp');
-    if (grp) grp.hidden = !canRemember();
+    if (grp) setHidden(grp, !canRemember());
     const rec = $('folderReconnect');
-    if (rec) rec.hidden = !folderHandle;
+    if (rec) setHidden(rec, !folderHandle);
     const forget = $('folderForget');
     if (forget) forget.disabled = !folderHandle;
     const name = $('folderName');
@@ -1960,14 +1988,14 @@
     }
     // The same offer on the stage, where someone who never opens the menu will see it.
     const bar = $('reconnectBar');
-    if (bar) bar.hidden = !(folderHandle && !queue.some((t) => t.file || t.handle));
+    if (bar) setHidden(bar, !(folderHandle && !queue.some((t) => t.file || t.handle)));
     document.body.classList.toggle('has-pending', queue.some((t) => t.pending));
   }
 
   function saveNote(msg, bad) {
     const el = $('linkNote');
     el.textContent = msg || '';
-    el.hidden = !msg;
+    setHidden(el, !msg);
     el.classList.toggle('bad', !!bad);
   }
 
@@ -2037,7 +2065,7 @@
     $('eqSel').value = readEqStyle();
     paintLook();
     $('visualsSel').value = visuals;
-    $('motionNote').hidden = !reducedMotion();
+    setHidden($('motionNote'), !reducedMotion());
     const n = readLinks().length;
     $('linkCount').textContent = n ? (n + ' saved. They come back every time you open the app.') : 'None saved.';
     $('forgetLinks').disabled = !n;
@@ -2046,12 +2074,12 @@
   function openSheet() {
     paintSheet();
     if (!$('tut').hidden) requestAnimationFrame(tutPlace);
-    $('sheetBack').hidden = false; $('sheet').hidden = false;
+    setHidden($('sheetBack'), false); setHidden($('sheet'), false);
     $('menuBtn').setAttribute('aria-expanded', 'true');
     $('sheetClose').focus();
   }
   function closeSheet() {
-    $('sheetBack').hidden = true; $('sheet').hidden = true;
+    setHidden($('sheetBack'), true); setHidden($('sheet'), true);
     if (!$('tut').hidden) requestAnimationFrame(tutPlace);
     $('menuBtn').setAttribute('aria-expanded', 'false');
     $('menuBtn').focus();
@@ -2167,7 +2195,7 @@
   function reportSaid(msg, bad) {
     const el = $('reportSaid');
     el.textContent = msg || '';
-    el.hidden = !msg;
+    setHidden(el, !msg);
     el.classList.toggle('bad', !!bad);
   }
   function paintDiag() { const el = $('reportDiag'); if (el) el.textContent = diagnostics(); }
@@ -2290,7 +2318,7 @@
     // menu could not be closed. Caught by clicking Done in a test rather than by looking at it.
     const sheetUp = !$('sheet').hidden;
     if (!step || !step.at) {
-      ring.hidden = true;
+      setHidden(ring, true);
       wrap.classList.add('plain');
       wrap.classList.toggle('top', sheetUp);
       return;
@@ -2306,13 +2334,13 @@
     const onScreen = r && r.width && r.height
       && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
     if (!onScreen) {
-      ring.hidden = true;
+      setHidden(ring, true);
       wrap.classList.add('plain');
       wrap.classList.toggle('top', sheetUp);
       return;
     }
     wrap.classList.remove('plain');
-    ring.hidden = false;
+    setHidden(ring, false);
     const pad = 6;
     ring.style.top = (r.top - pad) + 'px';
     ring.style.left = (r.left - pad) + 'px';
@@ -2340,9 +2368,9 @@
     $('tutStep').textContent = (tutAt + 1) + ' of ' + TUT.length;
     $('tutTitle').textContent = step.title;
     $('tutBody').textContent = step.body;
-    $('tutBack').hidden = tutAt === 0;
+    setHidden($('tutBack'), tutAt === 0);
     $('tutNext').textContent = tutAt === TUT.length - 1 ? 'Done' : 'Next';
-    $('tut').hidden = false;
+    setHidden($('tut'), false);
     tutPlace();
     // Measured again after layout: scrollIntoView moves things, and the first measurement is
     // taken before the browser has applied it.
@@ -2352,8 +2380,8 @@
 
   function tutStart() { tutShow(0); }
   function tutEnd() {
-    $('tut').hidden = true;
-    $('tutRing').hidden = true;
+    setHidden($('tut'), true);
+    setHidden($('tutRing'), true);
     tutAt = -1;
     tutMarkSeen();
     if (!$('sheet').hidden) closeSheet();
@@ -2393,7 +2421,7 @@
   function sayRoll() {
     const el = $('stageHint');
     if (!el) return;
-    el.hidden = false;
+    setHidden(el, false);
     el.textContent = readBeatEffect() + ' · ' + readPalette() + ' · ' + readEqStyle()
       + (readAmbient() === 'off' ? '' : ' · ' + readAmbient());
     clearTimeout(rollTimer);
@@ -2517,7 +2545,7 @@
   });
   $('linkBtn').addEventListener('click', () => {
     const row = $('linkRow');
-    row.hidden = !row.hidden;
+    setHidden(row, !isHidden(row));      // the attribute is what CSS reads
     $('linkBtn').setAttribute('aria-expanded', row.hidden ? 'false' : 'true');
     if (!row.hidden) $('linkInput').focus();
   });
@@ -2539,7 +2567,7 @@
     r.setAttribute('aria-pressed', repeatMode !== 'off' ? 'true' : 'false');
     label('repeatBtn',
       repeatMode === 'one' ? 'Repeat one track' : repeatMode === 'all' ? 'Repeat the queue' : 'Repeat off');
-    $('repeatOne').hidden = repeatMode !== 'one';
+    setHidden($('repeatOne'), repeatMode !== 'one');
   }
   $('shuffleBtn').addEventListener('click', () => {
     shuffleOn = !shuffleOn;
