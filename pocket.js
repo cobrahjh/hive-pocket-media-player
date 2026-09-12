@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.49.0-beta';
+  const VERSION = '1.50.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1791,19 +1791,49 @@
   // the tap does its own job as well. The permission sheet is Chrome's and still appears; what
   // is gone is having to ask for it deliberately.
   let autoTried = false;
+  let autoArmed = false;
+  // THE FIRST TOUCH ON A PHONE DOES NOT COUNT, and that was the whole of "denied". This listened
+  // on pointerdown because it arrives first and a drag never becomes a click. On a mouse that is
+  // fine; on a touch screen a pointerdown carries NO user activation — the browser hands
+  // activation out on pointerup and touchend for a finger, on pointerdown only for a mouse — so
+  // the very first touch on Harold's phone called requestPermission() at a moment the browser
+  // was not allowed to show a sheet. Chrome does not throw for that; it resolves 'denied' and
+  // shows nothing. The app recorded "denied", told him the browser was blocking the folder, and
+  // told him to choose it again. He had denied nothing. He had never been asked.
+  //
+  // So the trap now listens on the events that carry activation for a finger as well as a mouse,
+  // and — the part that makes it honest — ASKS THE BROWSER WHETHER IT HAS ACTIVATION before
+  // spending the one attempt. navigator.userActivation.isActive is exactly that question. With
+  // no activation it records that it did not ask, stays armed, and the next qualifying event
+  // tries again; a 'denied' in the report now means a person or a policy said no.
+  //
+  // WHAT STOPS BEING VISIBLE: on a browser without navigator.userActivation the check is skipped
+  // and the old behaviour stands. That is every current Chrome, Edge, Safari and Firefox
+  // answering yes, so in practice nothing.
+  function hasGesture() {
+    try {
+      const ua = navigator.userActivation;
+      if (ua && typeof ua.isActive === 'boolean') return ua.isActive;
+    } catch (e) {}
+    return true;
+  }
   function armAutoReconnect() {
-    if (autoTried) return;
-    const go = () => {
+    if (autoTried || autoArmed) return;
+    autoArmed = true;
+    const go = (ev) => {
       if (autoTried) return;
       if (!folderHandle) return;
       if (queue.some((t) => t.file || t.handle)) return;   // already loaded; nothing to do
+      // A mouse has activation from pointerdown; a finger only from pointerup. Waiting for the
+      // right one costs a mouse nothing and is the difference between asking and pretending.
+      if (ev && ev.type === 'pointerdown' && ev.pointerType && ev.pointerType !== 'mouse') return;
+      if (!hasGesture()) { folderStateAfterAsk = 'not asked (no gesture on ' + (ev ? ev.type : '?') + ')'; return; }
       autoTried = true;
       reconnectFolder();
     };
-    // pointerdown, not click: it arrives first, and a drag across the stage never becomes a
-    // click at all — which is exactly the gesture someone opening this app makes first.
-    document.addEventListener('pointerdown', go, { once: false, capture: true });
-    document.addEventListener('keydown', go, { capture: true });
+    for (const t of ['pointerdown', 'pointerup', 'keydown']) {
+      document.addEventListener(t, go, { capture: true });
+    }
   }
 
   // SAY WHAT ANDROID IS ABOUT TO SAY, before it says it. Harold pressed PLAY and got a system
@@ -1843,16 +1873,27 @@
 
   async function reconnectFolder() {
     if (!folderHandle) return;
+    // The same check on the deliberate path, so a call that arrives with no gesture — a promise
+    // chain that awaited something first, a synthetic click — records what it is instead of a
+    // denial nobody made. It does not show the Android warning either: there is no sheet coming.
+    if (!hasGesture()) {
+      folderStateAfterAsk = 'not asked (no gesture)';
+      folderNote('Tap any track, or the folder button, to bring the music back.');
+      return;
+    }
     sayPromptComing();
     let ok = 'denied';
-    try { ok = await folderHandle.requestPermission({ mode: 'read' }); } catch (e) {}
+    try { ok = await folderHandle.requestPermission({ mode: 'read' }); }
+    catch (e) { ok = 'error: ' + (e && e.name ? e.name : 'unknown'); }
     folderStateAfterAsk = ok;
     promptWarning = false;          // answered: the hint goes back to whatever it should say
     clearTimeout(promptTimer);
     paintStageHint();
     if (ok === 'granted') askPersist();
-    if (ok !== 'granted') { folderNote('This browser would not reconnect that folder. Choose it '
-      + 'again to start over.', true); return; }
+    // Asking again is allowed and is the ordinary way back from a mis-tap on the sheet; choosing
+    // the folder again is the last resort, not the first instruction.
+    if (ok !== 'granted') { folderNote('The folder was not allowed. Tap any track to ask again, '
+      + 'or choose the folder again from the folder button.', true); return; }
     await loadFolder(folderHandle);
   }
 

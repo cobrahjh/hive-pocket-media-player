@@ -92,6 +92,15 @@ function el(id) {
  *                       start does — the case whose silence cost a release to find
  *   opts.youtube        'ok' (default) the player script arrives and works, 'blocked' it fails
  *                       to load the way it does with no connection
+ *   opts.frames         a clock the test drives and a requestAnimationFrame that queues; see
+ *                       app.frame() / app.frames()
+ *   opts.folder         a remembered music folder: showDirectoryPicker exists, IndexedDB holds a
+ *                       handle whose queryPermission answers opts.folder.state ('prompt' by
+ *                       default) and whose requestPermission answers opts.folder.answer
+ *                       ('granted' by default) and counts its calls; the track names are in
+ *                       localStorage the way a previous visit leaves them; and
+ *                       navigator.userActivation.isActive is whatever app.activation(bool) last
+ *                       set, false to begin with — the state a page loads in.
  */
 function boot(opts) {
   const o = opts || {};
@@ -148,6 +157,61 @@ function boot(opts) {
 
   const fullscreen = { element: null, requests: 0, exits: 0 };
   const store = new Map();
+
+  // A REMEMBERED FOLDER, when asked for. The handle is what the File System Access API hands
+  // back: a kind, a name, the two permission calls, and an entries() iterator. requestPermission
+  // is COUNTED, because the bug this exists for was the app spending that call at a moment the
+  // browser would refuse it - and a browser refuses it by answering 'denied' while showing
+  // nothing, which from the app's side is indistinguishable from a person saying no. The count
+  // is the only way a test can tell "asked and refused" from "never asked".
+  const folder = { asks: 0, queries: 0, handle: null };
+  if (o.folder) {
+    const fo = o.folder;
+    const files = (fo.files || ['one.mp3', 'two.mp3', 'three.mp3']).map((name) => ({
+      kind: 'file', name,
+      getFile: () => Promise.resolve({ name, type: 'audio/mpeg', size: 8 }),
+    }));
+    folder.handle = {
+      kind: 'directory', name: fo.name || 'Music',
+      queryPermission: () => { folder.queries++; return Promise.resolve(fo.state || 'prompt'); },
+      requestPermission: () => {
+        folder.asks++;
+        // The app must ask with activation. The fake browser is stricter than Chrome here on
+        // purpose: Chrome silently answers 'denied'; this answers 'denied' AND records that the
+        // call arrived without a gesture, so the failure is named rather than mimicked.
+        if (!activation.isActive) { folder.askedWithoutGesture = (folder.askedWithoutGesture || 0) + 1; return Promise.resolve('denied'); }
+        return Promise.resolve(fo.answer || 'granted');
+      },
+      entries: async function* () { for (const f of files) yield [f.name, f]; },
+    };
+    store.set('hive-pocket.foldernames', JSON.stringify(files.map((f) => f.name.replace(/\.[^.]+$/, ''))));
+  }
+  const activation = { isActive: false };
+  // The smallest IndexedDB that satisfies idb()/idbGet()/idbPut()/idbDel() in pocket.js: one
+  // store, callbacks on the next tick the way the real one is never synchronous.
+  const idbData = new Map();
+  if (o.folder) idbData.set('musicFolder', folder.handle);
+  const later = (fn) => setTimeout(fn, 0);
+  const fakeIndexedDB = {
+    open() {
+      const req = {};
+      const db = {
+        objectStoreNames: { contains: () => true },
+        createObjectStore: noop,
+        transaction: () => {
+          const tx = {};
+          tx.objectStore = () => ({
+            get(k) { const r = {}; later(() => { r.result = idbData.has(k) ? idbData.get(k) : null; if (r.onsuccess) r.onsuccess(); }); return r; },
+            put(v, k) { idbData.set(k, v); later(() => { if (tx.oncomplete) tx.oncomplete(); }); },
+            delete(k) { idbData.delete(k); later(() => { if (tx.oncomplete) tx.oncomplete(); }); },
+          });
+          return tx;
+        },
+      };
+      later(() => { req.result = db; if (req.onsuccess) req.onsuccess(); });
+      return req;
+    },
+  };
   const docHandlers = {};
   const doc = {
     getElementById: get,
@@ -241,7 +305,10 @@ function boot(opts) {
     navigator: {
       mediaSession: { metadata: null, playbackState: 'none', setActionHandler: noop },
       serviceWorker: { register: () => Promise.resolve() },
+      userActivation: activation,
+      storage: { persisted: () => Promise.resolve(false), persist: () => Promise.resolve(false) },
     },
+    indexedDB: fakeIndexedDB,
     MediaMetadata: function (m) { Object.assign(this, m); },
     matchMedia: () => ({ matches: o.reducedMotion === true, addEventListener: noop }),
     AudioContext: function () {
@@ -303,6 +370,7 @@ function boot(opts) {
     const i = l.indexOf(fn); if (i >= 0) l.splice(i, 1);
   };
   sandbox.winHandlers = winHandlers;
+  if (o.folder) sandbox.showDirectoryPicker = () => Promise.resolve(folder.handle);
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
@@ -331,6 +399,11 @@ function boot(opts) {
     frames(n, ms) { for (let i = 0; i < n; i++) this.frame(typeof ms === 'number' ? ms : 16); },
     now: () => clock,
     pending: () => rafs.length,
+    folder,
+    /** What navigator.userActivation.isActive reports from now on. */
+    activation(on) { activation.isActive = on === true; },
+    /** Dispatch to the listeners the app registered on document for `type`. */
+    doc_fire(type, ev) { fire(doc, type, ev); },
   };
 }
 
