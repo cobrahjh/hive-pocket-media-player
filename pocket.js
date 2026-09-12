@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.55.0-beta';
+  const VERSION = '1.56.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -764,17 +764,206 @@
   // they merge what you pass over their defaults, so a call carrying only `ambient` silently
   // resets the burst effect, and a call carrying only `style` silently resets the equalizer's
   // colour. Every setting this app owns goes in every call, to both.
+
+  // ── Advanced: the rest of the renderers' knobs ───────────────────────────────────────────
+  // THE PATTERN THAT KEEPS RECURRING, for the sixth time. Pocket sent the equalizer exactly two
+  // keys — style and palette — and the renderer has twenty-odd more, every one of them already
+  // implemented, tested and unreachable from this app. Same story as the six beat effects, the
+  // sensitivity, the five palettes, the whole eq config, and bands 4-63.
+  //
+  // EVERY CONTROL IS BUILT FROM THE RENDERER'S OWN TABLES, never from a list retyped here: the
+  // ranges come from EqRender.DEFAULTS and FxRender.DEFAULTS, the motions from EqRender.MOTIONS,
+  // the fills from EqRender.FILLS. A knob whose default moves in the renderer moves here with no
+  // edit, and a knob that is removed there stops being offered rather than silently doing
+  // nothing. The cost is that this file cannot describe a knob the renderer does not export.
+  //
+  // WHY IT IS COLLAPSED AND LAST. The app is one screen and a few taps; twenty-five sliders is
+  // the opposite of that. Nothing here is needed to use the app, nothing here is in any Look,
+  // and the defaults are exactly what every previous version drew — open the group and nothing
+  // has changed until you move something.
+  const ADV_KEY = 'hive-pocket.advanced';
+
+  // `k` is a path: 'gain', or 'beat.minGapMs'. `fine` marks a control whose effect only shows in
+  // some styles, which is said in the label rather than by hiding the row — a control that
+  // vanishes is a control someone goes looking for.
+  const ADV_EQ = [
+    { k: 'bands',         t: 'range',  min: 8,   max: 64,  step: 1,    lab: 'Bands' },
+    { k: 'gain',          t: 'range',  min: 0.4, max: 2.5, step: 0.05, lab: 'Gain' },
+    { k: 'opacity',       t: 'range',  min: 0.1, max: 1,   step: 0.05, lab: 'Opacity' },
+    { k: 'fill',          t: 'pick',   opts: () => EqRender.FILLS, lab: 'Fill' },
+    { k: 'gap',           t: 'range',  min: 0,   max: 0.6, step: 0.02, lab: 'Gap between bars' },
+    { k: 'caps',          t: 'switch', lab: 'Peak markers' },
+    { k: 'floor',         t: 'switch', lab: 'Stub under a silent band' },
+    { k: 'mirror',        t: 'switch', lab: 'Mirror downward' },
+    { k: 'mirrorOpacity', t: 'range',  min: 0.05, max: 1, step: 0.05, lab: 'Mirror strength' },
+    { k: 'segments',      t: 'range',  min: 3,   max: 32,  step: 1,    lab: 'Segments — LED and Blocks' },
+    { k: 'thickness',     t: 'range',  min: 1,   max: 12,  step: 0.5,  lab: 'Thickness — Line and Dots' },
+    { k: 'glow',          t: 'range',  min: 0,   max: 1,   step: 0.05, lab: 'Glow — Line, Dots, Radial' },
+    { k: 'radius',        t: 'range',  min: 0.05, max: 0.8, step: 0.02, lab: 'Inner radius — Radial' },
+    { k: 'attack',        t: 'range',  min: 0.05, max: 1,  step: 0.05, lab: 'Attack — how fast a bar rises' },
+    { k: 'release',       t: 'range',  min: 0.02, max: 1,  step: 0.02, lab: 'Release — how fast it falls' },
+    { k: 'motion',        t: 'pick',   opts: () => EqRender.MOTIONS, lab: 'Motion' },
+    { k: 'motionRate',    t: 'range',  min: 0.05, max: 2,  step: 0.05, lab: 'Motion rate' },
+    { k: 'motionDepth',   t: 'range',  min: 0,   max: 1,   step: 0.05, lab: 'Motion depth' },
+    { k: 'motionBeat',    t: 'switch', lab: 'Motion follows the beat' },
+    { k: 'motionPunch',   t: 'range',  min: 0,   max: 3,   step: 0.1,  lab: 'Motion punch' },
+  ];
+
+  const ADV_FX = [
+    { k: 'opacity',          t: 'range',  min: 0.1, max: 1,  step: 0.05, lab: 'Opacity' },
+    { k: 'scale',            t: 'range',  min: 0.3, max: 2.5, step: 0.05, lab: 'Particle size' },
+    { k: 'beat.minGapMs',    t: 'range',  min: 60,  max: 1200, step: 20, lab: 'Shortest gap between bursts (ms)' },
+    { k: 'beat.syncToBpm',   t: 'switch', lab: 'Follow the song tempo' },
+    { k: 'beat.everyBeats',  t: 'range',  min: 1,   max: 8,  step: 1,    lab: 'One burst every N beats' },
+    { k: 'beat.dynamics',    t: 'pick',   opts: () => ['off', 'loudness', 'tempo', 'both'], lab: 'What sizes a burst' },
+  ];
+
+  function readAdv() {
+    try { const v = JSON.parse(localStorage.getItem(ADV_KEY) || '{}'); return (v && typeof v === 'object') ? v : {}; }
+    catch (e) { return {}; }
+  }
+  function writeAdv(v) {
+    try { localStorage.setItem(ADV_KEY, JSON.stringify(v)); } catch (e) { /* private mode */ }
+  }
+  const advDefaults = (which) => {
+    try { return which === 'eq' ? EqRender.DEFAULTS : FxRender.DEFAULTS; } catch (e) { return {}; }
+  };
+  function dig(obj, path) {
+    return String(path).split('.').reduce((o, k) => (o === null || o === undefined ? o : o[k]), obj);
+  }
+  function plant(obj, path, val) {
+    const parts = String(path).split('.');
+    let o = obj;
+    for (let i = 0; i < parts.length - 1; i++) { if (typeof o[parts[i]] !== 'object' || !o[parts[i]]) o[parts[i]] = {}; o = o[parts[i]]; }
+    o[parts[parts.length - 1]] = val;
+    return obj;
+  }
+  /** The saved value if there is one, otherwise the renderer's own default. */
+  function advValue(which, path) {
+    const saved = dig(readAdv()[which] || {}, path);
+    return saved === undefined ? dig(advDefaults(which), path) : saved;
+  }
+  function setAdv(which, path, val) {
+    const all = readAdv();
+    all[which] = plant(all[which] || {}, path, val);
+    writeAdv(all);
+    applyRenderers();
+    paintAdvRow(which, path);
+  }
+  function resetAdv(which) {
+    const all = readAdv();
+    delete all[which];
+    writeAdv(all);
+    applyRenderers();
+    buildAdvanced();
+  }
+  /** Fold the saved overrides onto a config the app has already built. */
+  function withAdv(which, base) {
+    const over = readAdv()[which] || {};
+    const specs = which === 'eq' ? ADV_EQ : ADV_FX;
+    for (const spec of specs) {
+      const v = dig(over, spec.k);
+      if (v !== undefined) plant(base, spec.k, v);
+    }
+    return base;
+  }
+
+
+  // ── Advanced: drawing the controls ───────────────────────────────────────────────────────
+  // Built rather than written out, because twenty-six hand-written rows in index.html is
+  // twenty-six chances for a label and a key to drift apart, and the tables above already hold
+  // every fact a row needs.
+  function advRowId(which, path) { return 'adv-' + which + '-' + String(path).replace(/\./g, '-'); }
+
+  function paintAdvRow(which, path) {
+    const row = document.getElementById(advRowId(which, path));
+    if (!row) return;
+    const val = advValue(which, path);
+    const out = row.querySelector('.adv-val');
+    if (out && !row.classList.contains('wide')) {
+      out.textContent = (typeof val === 'boolean') ? (val ? 'on' : 'off') : String(val);
+    }
+    const dflt = dig(advDefaults(which), path);
+    // A moved knob is marked, because "what have I changed" is the question someone opening this
+    // group after a week actually has, and reading twenty-six values against a default they
+    // cannot see is not an answer.
+    row.classList.toggle('moved', String(val) !== String(dflt));
+  }
+
+  function buildAdvanced() {
+    for (const [which, specs, host] of [['eq', ADV_EQ, 'advEq'], ['fx', ADV_FX, 'advFx']]) {
+      const box = $(host);
+      if (!box) continue;
+      box.textContent = '';
+      for (const spec of specs) {
+        const val = advValue(which, spec.k);
+        const row = document.createElement('div');
+        // A pick shows its own value in the control, so it does not get a readout column — a
+        // word like "gradient" does not fit a column sized for "0.35" and spilled past the edge.
+        row.className = 'adv-row' + (spec.t === 'pick' ? ' wide' : '');
+        row.id = advRowId(which, spec.k);
+
+        const lab = document.createElement('label');
+        lab.className = 'adv-lab';
+        lab.textContent = spec.lab;
+        lab.setAttribute('for', advRowId(which, spec.k) + '-in');
+
+        const out = document.createElement('span');
+        out.className = 'adv-val';
+
+        let input;
+        if (spec.t === 'switch') {
+          input = document.createElement('input');
+          input.type = 'checkbox';
+          input.checked = val === true;
+          input.addEventListener('change', () => setAdv(which, spec.k, input.checked));
+        } else if (spec.t === 'pick') {
+          input = document.createElement('select');
+          let opts = [];
+          try { opts = spec.opts() || []; } catch (e) { opts = []; }
+          for (const o of opts) {
+            const el = document.createElement('option');
+            el.value = o;
+            el.textContent = String(o).charAt(0).toUpperCase() + String(o).slice(1);
+            input.appendChild(el);
+          }
+          input.value = String(val);
+          input.addEventListener('change', () => setAdv(which, spec.k, input.value));
+        } else {
+          input = document.createElement('input');
+          input.type = 'range';
+          input.min = spec.min; input.max = spec.max; input.step = spec.step;
+          input.value = Number(val);
+          // 'input' rather than 'change': a slider you cannot see the effect of while dragging is
+          // a slider you set by trial and error. applyRenderers() is cheap - it hands the
+          // renderers a config, it does not rebuild anything.
+          input.addEventListener('input', () => setAdv(which, spec.k, Number(input.value)));
+        }
+        input.id = advRowId(which, spec.k) + '-in';
+        input.className = 'adv-in';
+
+        row.appendChild(lab);
+        row.appendChild(input);
+        row.appendChild(out);
+        box.appendChild(row);
+        paintAdvRow(which, spec.k);
+      }
+    }
+  }
+
   function applyRenderers() {
     rollEq();
     const q = QUALITY[readQuality()];
     if (eq) {
-      eq.setConfig({ style: eqShapeNow, palette: eqPaletteNow });
+      // withAdv LAST, because setConfig REPLACES rather than merges — every key the app owns
+      // has to be in this one object or the renderer resets it to its own default.
+      eq.setConfig(withAdv('eq', { style: eqShapeNow, palette: eqPaletteNow }));
       // Per SURFACE, deliberately not part of the saved config — the renderer keeps frame rate
       // out of setConfig for exactly this reason, so it is set separately every time.
       if (eq.setFps) eq.setFps(q.fps);
     }
     if (!fx) return;
-    fx.setConfig({
+    fx.setConfig(withAdv('fx', {
       ambient: readAmbient(),
       palette: readPalette(),
       particleCap: q.parts,
@@ -790,7 +979,7 @@
         sensitivity: SENS[readSens()],
         intensity: PUNCH[readPunch()],
       },
-    });
+    }));
   }
   function readModes() {
     try {
@@ -2091,6 +2280,7 @@
     $('linkCount').textContent = n ? (n + ' saved. They come back every time you open the app.') : 'None saved.';
     $('forgetLinks').disabled = !n;
     $('aboutVer').textContent = 'beta ' + VERSION.replace(/-beta$/, '');
+    buildAdvanced();
   }
   function openSheet() {
     paintSheet();
@@ -2154,6 +2344,19 @@
            + seedTier() + ')' : ''));
     try { add('cores', navigator.hardwareConcurrency || 'unknown'); } catch (e) {}
     try { add('memory', (navigator.deviceMemory || 'unknown') + ' GB'); } catch (e) {}
+    // Only what has been MOVED, never all twenty-six: a report listing defaults is a report
+    // nobody reads to the end, and the whole question is what is not standard.
+    const advAll = readAdv();
+    const moved = [];
+    for (const [which, specs] of [['eq', ADV_EQ], ['fx', ADV_FX]]) {
+      for (const spec of specs) {
+        const v = dig(advAll[which] || {}, spec.k);
+        if (v !== undefined && String(v) !== String(dig(advDefaults(which), spec.k))) {
+          moved.push(which + '.' + spec.k + '=' + v);
+        }
+      }
+    }
+    add('advanced', moved.length ? moved.join(', ') : 'all default');
     add('on the stage', visuals);
     add('player', readPlayer());
     L.push('');
@@ -3232,6 +3435,11 @@
     });
   }
 
+  for (const [id, which] of [['advEqReset', 'eq'], ['advFxReset', 'fx']]) {
+    const b = $(id);
+    if (b) b.addEventListener('click', () => resetAdv(which));
+  }
+
   $('fxBtn').addEventListener('click', () => applyVisuals(fxShown() ? 'eq' : 'both'));
   $('visualsSel').addEventListener('change', () => applyVisuals($('visualsSel').value));
 
@@ -3347,6 +3555,10 @@
       return { w: boltW, h: boltH,
                bw: boltCv ? boltCv.width : 0, bh: boltCv ? boltCv.height : 0, dpr: boltDpr };
     },
+    get advanced() { return readAdv(); },
+    advValue,
+    setAdv,
+    resetAdv,
     get wispLog() { return Object.assign({}, wispLog); },
     get fairyInBounds() {
       return fairies.every((f) => f.x >= -8 && f.x <= boltW + 8 && f.y >= -8 && f.y <= boltH + 8);

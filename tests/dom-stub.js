@@ -20,6 +20,25 @@ const vm = require('vm');
 
 const noop = () => {};
 
+/**
+ * THE REAL RENDERERS' PURE EXPORTS, required rather than retyped.
+ *
+ * The fakes below stand in for create() because drawing is not what these suites are about. But
+ * the TABLES — DEFAULTS, MOTIONS, FILLS, EFFECTS — are facts about the renderers, and a copy of
+ * a fact is a fact that can be wrong. pocket.js builds its advanced controls from these, so a
+ * stub with its own hand-written copy would let a suite pass against ranges the renderer does
+ * not have and defaults it does not use.
+ *
+ * Both files export themselves under module.exports when required, and only create() touches a
+ * DOM, so this costs nothing. If a renderer is ever unloadable the fakes fall back to empty
+ * tables and the advanced cases fail loudly, which is the right way round.
+ */
+function realRenderer(file) {
+  try { return require(path.join(__dirname, '..', file)); } catch (e) { return null; }
+}
+const REAL_EQ = realRenderer('eq-render.js');
+const REAL_FX = realRenderer('fx-render.js');
+
 class SandboxURL extends URL {}
 SandboxURL.createObjectURL = () => 'blob:stub/1';
 SandboxURL.revokeObjectURL = noop;
@@ -78,7 +97,7 @@ function el(id) {
     id,
     tagName: isSvg ? 'svg' : 'DIV',
     isSvg,
-    textContent: '',
+    _text: '',
     value: '',
     disabled: false,
     className: '',
@@ -98,8 +117,40 @@ function el(id) {
       if (want) e.attrs[k] = ''; else delete e.attrs[k];
       return want;
     },
-    appendChild(c) { e.children.push(c); return c; },
-    append(...cs) { e.children.push(...cs); },
+    appendChild(c) { e.children.push(c); if (c && typeof c === 'object') c.parentNode = e; return c; },
+    append(...cs) { for (const c of cs) e.appendChild(c); },
+    // The advanced rows are BUILT rather than written into index.html, so the app walks its own
+    // freshly created elements the way it walks the document. Every element needs to answer
+    // querySelector for its own subtree, not just the document.
+    querySelector(sel) {
+      const want = String(sel || '');
+      const match = (n) => {
+        if (!n || typeof n !== 'object') return false;
+        if (want.charAt(0) === '.') return n.classList && n.classList.contains(want.slice(1));
+        if (want.charAt(0) === '#') return n.id === want.slice(1);
+        return String(n.tagName || '').toLowerCase() === want.toLowerCase();
+      };
+      const walk = (n) => {
+        for (const c of (n.children || [])) {
+          if (match(c)) return c;
+          const deep = walk(c);
+          if (deep) return deep;
+        }
+        return null;
+      };
+      return walk(e);
+    },
+    querySelectorAll(sel) {
+      const out = [];
+      const want = String(sel || '');
+      const match = (n) => want === '*' ? true
+        : want.charAt(0) === '.' ? (n.classList && n.classList.contains(want.slice(1)))
+        : want.charAt(0) === '#' ? n.id === want.slice(1)
+        : String(n.tagName || '').toLowerCase() === want.toLowerCase();
+      const walk = (n) => { for (const c of (n.children || [])) { if (match(c)) out.push(c); walk(c); } };
+      walk(e);
+      return out;
+    },
     remove: noop,
     focus: noop,
     click() { fire(e, 'click'); },
@@ -124,6 +175,15 @@ function el(id) {
   // reflected both ways. On an <svg> it is a plain property that nothing else reads — assigning
   // it changes no attribute and therefore changes nothing on screen, which is the bug this stub
   // could not previously express.
+  // `el.textContent = ''` EMPTIES AN ELEMENT in a browser - children and all - and that is
+  // exactly how the app clears the advanced box before rebuilding it. A stub where it only
+  // cleared a string let rows accumulate on every repaint and every count assertion pass at
+  // twice the truth.
+  Object.defineProperty(e, 'textContent', {
+    enumerable: true,
+    get() { return e._text; },
+    set(v) { e._text = String(v === null || v === undefined ? '' : v); if (e._text === '') e.children.length = 0; },
+  });
   if (HIDDEN_IDS.has(id)) e.attrs.hidden = '';
   if (isSvg) {
     e.hidden = 'hidden' in e.attrs;    // a dead property, seeded to match the markup once
@@ -156,6 +216,8 @@ function shown(e) { return !(e && e.attrs && 'hidden' in e.attrs); }
  *                       to load the way it does with no connection
  *   opts.frames         a clock the test drives and a requestAnimationFrame that queues; see
  *                       app.frame() / app.frames()
+ *   opts.store          an existing localStorage Map to boot over, so a case can restart the app
+ *                       the way a reload does. app.store is the one to pass.
  *   opts.folder         a remembered music folder: showDirectoryPicker exists, IndexedDB holds a
  *                       handle whose queryPermission answers opts.folder.state ('prompt' by
  *                       default) and whose requestPermission answers opts.folder.answer
@@ -227,7 +289,10 @@ function boot(opts) {
   }
 
   const fullscreen = { element: null, requests: 0, exits: 0 };
-  const store = new Map();
+  // opts.store lets a case boot a SECOND app over the first one's storage, which is what a
+  // reload actually is. Without it "does this survive a restart" could only be asserted by
+  // reading back the same live object that wrote it, which proves nothing.
+  const store = o.store instanceof Map ? o.store : new Map();
 
   // A REMEMBERED FOLDER, when asked for. The handle is what the File System Access API hands
   // back: a kind, a name, the two permission calls, and an entries() iterator. requestPermission
@@ -292,13 +357,24 @@ function boot(opts) {
   };
   const docHandlers = {};
   const doc = {
-    getElementById: get,
+    // Fabricate-on-demand, but LOOK FIRST. The advanced rows are created by the app and appended
+    // into a container, so asking for one by id has to find the real row rather than mint a
+    // fresh empty element that answers every question wrongly and silently.
+    getElementById(id) {
+      if (els[id]) return els[id];
+      for (const key of Object.keys(els)) {
+        const hit = els[key].querySelectorAll ? els[key].querySelectorAll('*') : [];
+        for (const n of hit) if (n && n.id === id) return n;
+      }
+      return get(id);
+    },
     createElement: (tag) => {
       if (tag === 'audio') return media;
       const e = el('');
       e.tagName = String(tag).toUpperCase();
       return e;
     },
+
     handlers: docHandlers,
     addEventListener(t, fn) { (docHandlers[t] = docHandlers[t] || []).push(fn); },
     // Appending YouTube's script is a network fetch. Either it arrives and announces itself the
@@ -424,17 +500,30 @@ function boot(opts) {
     // real thing does not make the suite weaker in an obvious place; it makes it wrong in a
     // confusing one. Anything added to a renderer and called from here belongs in this list.
     EqRender: {
+      DEFAULTS: REAL_EQ ? REAL_EQ.DEFAULTS : {},
+      STYLES: REAL_EQ ? REAL_EQ.STYLES : [],
+      MOTIONS: REAL_EQ ? REAL_EQ.MOTIONS : [],
+      FILLS: REAL_EQ ? REAL_EQ.FILLS : [],
+      PALETTES: REAL_EQ ? REAL_EQ.PALETTES : [],
       create: () => ({
         push: noop, start: noop, stop: noop, setFps: noop,
-        // opts.brokenRenderer makes this throw, which is how a renderer that cannot start on a
-        // real phone behaves. It exists because that failure used to be swallowed whole.
-        setConfig: () => { if (o.brokenRenderer) throw new Error('renderer refused'); },
+        // RECORDED, not swallowed. setConfig REPLACES the renderer's config, so what matters is
+        // the whole object that arrived - a test that can only see storage cannot tell a setting
+        // that reached the renderer from one that was saved and dropped on the floor.
+        setConfig: (c) => {
+          eqConfigs.push(c);
+          if (o.brokenRenderer) throw new Error('renderer refused');
+        },
         resize: () => resizes.eq++,
       }),
     },
     FxRender: {
+      DEFAULTS: REAL_FX ? REAL_FX.DEFAULTS : {},
+      EFFECTS: REAL_FX ? REAL_FX.EFFECTS : [],
+      AMBIENTS: REAL_FX ? REAL_FX.AMBIENTS : [],
       create: () => ({
-        setConfig: noop, pushBands: noop, start: noop, stop: noop, say: noop,
+        setConfig: (c) => { fxConfigs.push(c); },
+        pushBands: noop, start: noop, stop: noop, say: noop,
         setPlayerUp: noop, isAudioLive: () => false, getBpm: () => ({ bpm: null }),
         fire: () => fires.push([].slice.call(arguments)),
         stats: () => ({ parts: 0, ambient: 0, shells: 0, bolts: 0 }),
@@ -450,6 +539,7 @@ function boot(opts) {
     document: doc,
   };
   const resizes = { eq: 0, fx: 0 };
+  const eqConfigs = [], fxConfigs = [];
   let clock = 1000, rafId = 0, rafs = [];
   const fires = [];
   // A real window has addEventListener; this sandbox is the window, so it needs one or the app
@@ -477,6 +567,8 @@ function boot(opts) {
     fullscreen,
     yt,
     resizes,
+    eqConfigs,
+    fxConfigs,
     store,
     pocket: sandbox.window.__pocket,
     playCalls: () => playCalls,

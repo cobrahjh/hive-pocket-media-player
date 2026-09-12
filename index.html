@@ -627,6 +627,31 @@
       </ul>
     </details>
 
+    <!-- LAST, AND CLOSED. Nothing in here is needed to use the app, nothing in here is part of
+         any Look, and every control starts at the renderer's own default — so opening this group
+         changes nothing until something is moved. The rows are built by pocket.js from the
+         renderers' exported tables rather than written out here, because twenty-six hand-written
+         rows is twenty-six chances for a label and a key to drift apart. -->
+    <details class="grp">
+      <summary>Advanced</summary>
+      <p class="set-note">The rest of what the renderers can do. These were always in there and
+        this app never asked for them. Nothing here is in a Look, so a Look will not undo your
+        changes and your changes will not drop the Look picker to Custom — the two are
+        independent on purpose.</p>
+      <p class="set-note">A changed value is marked. Some only show in some styles, which the
+        label says rather than hiding the row.</p>
+
+      <h3 class="adv-h">Equalizer</h3>
+      <div id="advEq" class="adv-box"></div>
+      <button class="sheet-btn ghost" id="advEqReset" type="button"
+              title="Put every equalizer value back to the renderer's own default">Reset the equalizer</button>
+
+      <h3 class="adv-h">Effects</h3>
+      <div id="advFx" class="adv-box"></div>
+      <button class="sheet-btn ghost" id="advFxReset" type="button"
+              title="Put every effects value back to the renderer's own default">Reset the effects</button>
+    </details>
+
     <details class="grp">
       <summary>About</summary>
       <p class="set-note">

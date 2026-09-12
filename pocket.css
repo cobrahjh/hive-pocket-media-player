@@ -605,3 +605,39 @@ body.has-pending .reconnect-btn { border-style: solid; }
   .busy-ring { animation: busy-pulse 1.4s ease-in-out infinite; border-top-color: var(--hive); }
   @keyframes busy-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
 }
+
+
+/* ── Advanced rows ───────────────────────────────────────────────────────────────────────────
+   A three-column grid rather than a stack: label, control, value. At phone width the control is
+   what the thumb needs and the number is what the eye needs, and putting the number at the end
+   of the same line is the only way to have both without the list becoming twice as tall as the
+   screen. */
+.adv-h {
+  font-size: 0.82rem; letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--hive); margin: 1.1rem 0 0.4rem;
+}
+.adv-box { display: flex; flex-direction: column; gap: 0.1rem; }
+.adv-row {
+  display: grid; grid-template-columns: 1fr minmax(96px, 40%) 3.2rem;
+  align-items: center; gap: 0.5rem;
+  padding: 0.32rem 0.4rem; border-radius: 8px;
+}
+.adv-row + .adv-row { border-top: 1px solid rgba(255,255,255,0.05); }
+/* A picker names its own value, so it takes the readout column instead of overflowing it. */
+.adv-row.wide { grid-template-columns: 1fr minmax(120px, 46%); }
+.adv-row.wide .adv-val { display: none; }
+/* A moved knob is marked on the ROW, not with a badge: the whole line lifting is readable at a
+   glance down a list of twenty, and a badge is one more thing to explain. */
+.adv-row.moved { background: rgba(245,166,35,0.09); }
+.adv-row.moved .adv-lab { color: var(--text); }
+.adv-lab { font-size: 0.86rem; color: var(--muted); line-height: 1.25; }
+.adv-val {
+  font: 0.78rem/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted); text-align: right; white-space: nowrap;
+}
+.adv-row.moved .adv-val { color: var(--hive); }
+/* 44px of touch target without 44px of visual weight: the thumb gets the padding, the eye gets
+   a thin track. */
+.adv-in { width: 100%; min-height: 34px; accent-color: var(--hive); }
+select.adv-in { min-height: 38px; font-size: 0.85rem; }
+input[type="checkbox"].adv-in { width: 22px; height: 22px; justify-self: start; }
