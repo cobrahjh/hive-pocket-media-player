@@ -31,13 +31,17 @@
 // Kept in step with VERSION in pocket.js BY HAND — they are separate scripts and cannot
 // import from one another. Bump both together; the chip on screen is what a bug report will
 // quote, and a cache named after a different build is how a stale file survives a release.
-const VERSION = '1.54.0-beta';
+const VERSION = '1.55.0-beta';
 const CACHE = 'hive-pocket-' + VERSION;
 
 // The whole app. It is small on purpose, and every one of these must exist or install fails.
 const SHELL = [
   './',
   'index.html',
+  // Precached rather than left to the network-first fallback, for one reason: Google treats an
+  // offline failure as a crash when it reviews a Trusted Web Activity, and the privacy link in
+  // About is reachable from a cold offline start. 5KB to remove that.
+  'privacy.html',
   'pocket.css',
   'pocket.js',
   'eq-render.js',

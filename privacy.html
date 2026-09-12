@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<!--
+  Copyright 2026 Harold J. Harding
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+
+  A SEPARATE PAGE, not a section of the app, because Google Play requires a privacy policy at a
+  public URL that a reviewer can open without installing anything. It is deliberately plain: no
+  script, no font, no image, nothing fetched. A privacy policy that loads a tracker is a joke
+  told at the reader's expense.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; form-action 'none'">
+<title>Privacy — Hive Pocket Media Player</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #131110; color: #efe9e2;
+         font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+         padding: 2rem 1.1rem 4rem; }
+  main { max-width: 40rem; margin: 0 auto; }
+  h1 { font-size: 1.5rem; letter-spacing: 0.04em; text-transform: uppercase; margin: 0 0 0.2rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 0.4rem; color: #f5a623; }
+  .sub { color: #9b938b; margin: 0 0 2rem; }
+  p, li { color: #d8d1c9; }
+  ul { padding-left: 1.1rem; }
+  strong { color: #efe9e2; }
+  a { color: #f5a623; }
+  footer { margin-top: 3rem; border-top: 1px solid #2a2725; padding-top: 1rem; color: #9b938b;
+           font-size: 0.9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Privacy</h1>
+  <p class="sub">Hive Pocket Media Player · last updated 12 September 2026</p>
+
+  <p><strong>This app collects nothing, sends nothing, and has nowhere to send it to.</strong>
+  There is no account, no server behind it, and no analytics. After the page has loaded, it makes
+  no network request of any kind.</p>
+
+  <h2>Your music</h2>
+  <p>Music you choose stays on your device. It is not uploaded, copied to any service, or
+  transmitted anywhere. The app reads a folder you pick, and reads each file only when you play
+  it.</p>
+  <p>Track <em>names</em> are stored in your own browser's storage so the list can come back when
+  you reopen the app without asking for the folder again. Names only — never a file path, never
+  the audio. They never leave the device, and <em>Forget the folder</em> in Settings deletes
+  them.</p>
+
+  <h2>The microphone</h2>
+  <p>If you turn the microphone on, its audio is used to draw the visuals and for nothing else. It
+  is <strong>not recorded, not stored, and not transmitted</strong>. It is connected to an
+  analyser and to nothing downstream of that analyser, which is also why it never reaches your
+  speakers. Turning the microphone off stops the capture and releases the device.</p>
+
+  <h2>What is stored on your device</h2>
+  <ul>
+    <li>Your settings — colours, effects, performance mode and the rest.</li>
+    <li>Track names from the folder you chose, as described above.</li>
+    <li>Any direct audio links you saved.</li>
+    <li>A handle to the music folder you picked, so the app can offer to reopen it. A browser will
+      never let a page reopen it silently; you are asked every time.</li>
+  </ul>
+  <p>All of it lives in your browser's own storage for this site. Clearing site data, or
+  uninstalling the app, removes all of it. None of it is readable by anyone else.</p>
+
+  <h2>Problem reports</h2>
+  <p>If you use <em>Report a problem</em>, the app fills in what it can see about itself and hands
+  the text to your own mail app. <strong>The app does not send it — you do</strong>, by pressing
+  send in your mail app, and you can read every line first.</p>
+  <p>A report contains your settings, counters such as how many tracks are queued, your screen
+  size, and your browser's user-agent string. It does <strong>not</strong> contain the names of
+  your music, your saved link addresses, or what is playing.</p>
+
+  <h2>Children</h2>
+  <p>The app is not directed at children and collects no personal information from anyone,
+  including children.</p>
+
+  <h2>Changes</h2>
+  <p>If this policy ever changes, the date at the top changes with it. The app's whole history is
+  public, so any change to what it does is visible in the
+  <a href="https://github.com/cobrahjh/hive-pocket-media-player">source</a>.</p>
+
+  <h2>Contact</h2>
+  <p>Open an issue on the
+  <a href="https://github.com/cobrahjh/hive-pocket-media-player/issues">repository</a>, or use
+  <em>Report a problem</em> in the app.</p>
+
+  <footer>
+    © 2026 Harold J. Harding · <a href="./">Back to the app</a>
+  </footer>
+</main>
+</body>
+</html>
