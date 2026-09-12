@@ -18,7 +18,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.51.0-beta';
+  const VERSION = '1.52.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2281,14 +2281,16 @@
           + 'the only one — it works with no music at all. Seven quick steps.' },
     { at: '#stage', title: 'The stage',
       body: 'Everything is drawn here. Tap it for full screen, and tap again to come back. '
-          + 'Drag a finger across it and it paints — that works right now, with silence.' },
+          + 'Drag a finger across it and it paints — that works right now, with silence. Two '
+          + 'fingers send a pair of wisps wandering off; two fingers again sends them away.' },
     { at: '#micBtn', title: 'Listen to the room', menu: true,
       body: 'The microphone is the big one. Play music out loud from anything — this phone, a '
           + 'speaker, a laptop, the radio — press this, and the visuals follow it. It is the only '
           + 'way to see sound this app cannot read, and nothing you hear is recorded or sent.' },
     { at: '#pickBtn', title: 'Or your own files',
-      body: 'Choose music from this phone. It asks each time you open the app cold, because a '
-          + 'browser is not allowed to remember a folder between visits.' },
+      body: 'Choose music from this phone. The folder is remembered — your tracks are listed '
+          + 'again the moment you open the app. Android will not carry the PERMISSION across a '
+          + 'cold start, so the first thing you touch asks for it back and the music returns.' },
     { at: '#menuBtn', title: 'Looks',
       body: 'Settings opens here. Start with Look at the top — one tap sets the bursts, the '
           + 'colours, the equalizer and the background together. The dropdowns underneath are '

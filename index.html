@@ -124,8 +124,9 @@
        unless there IS a folder to reconnect and nothing from it is loaded. -->
   <div class="reconnect" id="reconnectBar" hidden>
     <button class="reconnect-btn" id="reconnectBtn" type="button"
-            title="Reopen the music folder this app remembered">Reconnect your music</button>
-    <p class="reconnect-note">If Chrome offers <b>Allow on every visit</b>, take it.</p>
+            title="Bring the remembered folder back — touching anything does this too">Reconnect your music</button>
+    <p class="reconnect-note">Or just touch anything. If Chrome offers
+      <b>Allow on every visit</b>, take it.</p>
   </div>
 
   <!-- Adding a link. Hidden until asked for, because most sessions are picked files. -->
@@ -475,9 +476,10 @@
       <p class="set-note" id="folderName">No folder remembered yet.</p>
       <p class="set-note" id="folderNote" hidden></p>
       <button class="sheet-btn" id="folderPick" type="button"
-              title="Choose a folder of music and let the app remember it">Choose a folder</button>
+              title="Choose a folder of music — it is remembered, and comes back on a touch">Choose a folder</button>
       <button class="sheet-btn ghost" id="folderReconnect" type="button" hidden
-              style="margin-top:0.5rem" title="Reopen the remembered folder">Reconnect it</button>
+              style="margin-top:0.5rem"
+              title="Bring the remembered folder back — touching anything does this too">Reconnect it</button>
       <button class="sheet-btn danger" id="folderForget" type="button"
               style="margin-top:0.5rem" title="Stop remembering this folder">Forget the folder</button>
       <p class="set-note">This browser can remember a folder, so your music comes back without
@@ -493,9 +495,11 @@
         yours keeps asking, a bug report from below now carries exactly what the browser
         answered, which is the only way to tell the two apart.</p>
       <div id="installRow" hidden>
-        <p class="set-note">Installing this app to your home screen makes that permanent —
-          Chrome keeps folder permission for an installed app without asking again. It also opens
-          without the browser bars, which leaves more room for the visuals.</p>
+        <p class="set-note">Installing this app to your home screen opens it without the browser
+          bars, which leaves more room for the visuals. It does <b>not</b> stop the asking:
+          Chrome documents that an installed app keeps folder permission with no prompt, and on
+          a real Android phone — installed, storage persisted, Chrome 152 — it asked anyway. The
+          honest version is one tap after a cold start, wherever you happen to touch first.</p>
         <button class="sheet-btn" id="installBtn" type="button"
                 title="Add Hive Pocket to your home screen">Add to home screen</button>
       </div>
