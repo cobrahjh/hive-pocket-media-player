@@ -100,4 +100,11 @@ from here: both are pure, and this app stands alone.
 
 ## Licence
 
-Not yet chosen — ask the repository owner before redistributing.
+**Apache License 2.0** — see [LICENSE](LICENSE). Copyright 2026 Harold J. Harding.
+
+Use it, change it, ship it, sell it. Keep the notice, say what you changed, and do not use the
+author's name or the Hive marks to endorse your version. Contributors grant a patent licence with
+their contribution, which is the practical difference from MIT.
+
+`eq-render.js` and `fx-render.js` come from the author's own Hive Visuals and are covered by the
+same licence here.

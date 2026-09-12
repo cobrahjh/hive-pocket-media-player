@@ -12,6 +12,7 @@ network at all after the first load.
 | **[Your music folder](Your-music-folder)** | Why it asks once after a cold start, and what the app can and cannot remember |
 | **[Privacy](Privacy)** | What leaves the device: nothing |
 | **[For developers](For-developers)** | Repo layout, the test suites, and how a release ships |
+| **[Licence](Licence)** | Apache 2.0 — what you may do with it |
 
 ## In one paragraph
 
