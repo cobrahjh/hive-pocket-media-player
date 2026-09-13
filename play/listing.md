@@ -11,9 +11,9 @@ The full description is indexed by Play, so it is written as prose rather than a
 
 ## Short description (80 max)
 
-    Turns anything you can hear into light …because you're awesome as the music!
+    Turns anything you can hear into light …because you're as awesome as the music!
 
-76 characters. Harold's tagline, his punctuation.
+79 characters. Harold's tagline, his punctuation.
 
 ## Full description
 
@@ -47,7 +47,7 @@ The full description is indexed by Play, so it is written as prose rather than a
 
     Free, open source, and licensed under Apache 2.0.
 
-    …because you're awesome as the music!
+    …because you're as awesome as the music!
 
 Roughly 1,500 characters, well inside the limit, with room to add later.
 

@@ -1,6 +1,6 @@
 # Hive Pocket Media Player
 
-*…because you're awesome as the music!*
+*…because you're as awesome as the music!*
 
 **https://pocket.kinghive.online**
 
