@@ -426,6 +426,18 @@ function boot(opts) {
     // Every real document has a body, and the app toggles a class on it to resize the player.
     // Same rule as the renderer fakes: what the app legitimately uses, the stub carries.
     body: el('body'),
+    // The <html> element, for the one thing the app writes on it: --eq-h, the equalizer
+    // canvas's height. RECORDED rather than swallowed, because "the height was saved" and "the
+    // box actually changed" are two different claims and only the second one is what anybody
+    // sees. A stub that accepted setProperty and dropped it would pass an app that saved the
+    // number and never moved the bars.
+    documentElement: {
+      style: {
+        setProperty: (k, v) => { cssVars[String(k)] = String(v); },
+        getPropertyValue: (k) => cssVars[String(k)] || '',
+        removeProperty: (k) => { delete cssVars[String(k)]; },
+      },
+    },
     querySelectorAll: () => [],
     hidden: false,
     get fullscreenElement() { return fullscreen.element; },
@@ -563,6 +575,7 @@ function boot(opts) {
     document: doc,
   };
   const resizes = { eq: 0, fx: 0 };
+  const cssVars = {};
   const eqConfigs = [], fxConfigs = [];
   let clock = 1000, rafId = 0, rafs = [];
   const fires = [];
@@ -591,6 +604,7 @@ function boot(opts) {
     fullscreen,
     yt,
     resizes,
+    cssVars,
     eqConfigs,
     fxConfigs,
     store,

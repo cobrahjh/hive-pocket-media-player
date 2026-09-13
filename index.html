@@ -350,6 +350,16 @@
         </select>
         <p class="set-note">Seven ways to draw the same sound. More knobs in Advanced.</p>
       </div>
+      <div class="set">
+        <div class="adv-row" id="eqHeightRow">
+          <label class="adv-lab" for="eqHeight">Height</label>
+          <input class="adv-in" type="range" id="eqHeight" min="20" max="100" step="5" value="50"
+                 title="How tall the equalizer is">
+          <span class="adv-val" id="eqHeightVal">50%</span>
+        </div>
+        <p class="set-note">Half the screen to start with. The pops and the lightning still get
+          all of it — this is the bars only.</p>
+      </div>
     </details>
 
     <details class="grp">
@@ -570,6 +580,13 @@
           <pre class="diag" id="reportDiag">—</pre>
         </details>
       </details>
+      <div class="set">
+        <span class="set-lab">Start over</span>
+        <button class="sheet-btn danger" id="resetAll" type="button"
+                title="Put every setting back to how it arrived">Reset all settings</button>
+        <p class="set-note" id="resetNote">Puts every setting back to how it arrived. Your music,
+          your saved links and the folder you picked are not touched.</p>
+      </div>
     </details>
 
     <details class="grp">

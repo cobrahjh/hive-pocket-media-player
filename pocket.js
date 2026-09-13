@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.59.0-beta';
+  const VERSION = '1.60.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -789,6 +789,26 @@
   //
   // WHAT STOPS BEING VISIBLE when it is switched off: nothing the app does, only these
   // sentences. Everything a tip names is also in Settings → Help → How it works.
+  // THE DICE SAYS SO, ONCE. Surprise me changes more of the picture in one tap than anything
+  // else in this app, and in the header it looks exactly like every other icon. So it pulses
+  // until it has been pressed once, ever, and then never again — a thing that happens to a new
+  // app and not to a used one. Not a reminder: reminders are a pool that empties, this is one
+  // button with one thing to say. What stops being visible under reduced motion is the nudge
+  // and nothing else; the dice is in the same place and does the same thing.
+  const ROLLED_KEY = 'hive-pocket.rolled';
+  function hasRolled() { try { return localStorage.getItem(ROLLED_KEY) === '1'; } catch (e) { return true; } }
+  function markRolled() {
+    try { localStorage.setItem(ROLLED_KEY, '1'); } catch (e) {}
+    paintRollHint();
+  }
+  function paintRollHint() {
+    const b = $('rollBtn');
+    if (!b) return;
+    // Never during the tutorial: step six rings this very button, and a ring around a pulsing
+    // button is two things pointing at one control.
+    b.classList.toggle('hint', !hasRolled() && tutAt < 0);
+  }
+
   const TIPS_KEY = 'hive-pocket.tips';
   const TIP_GAP_MS = 20 * 60 * 60 * 1000;   // a day, less four hours, so it is not always the same time of day
   const TIP_DELAY_MS = 20000;               // let the person look at their own app first
@@ -1373,6 +1393,33 @@
 
   // ── Renderers ────────────────────────────────────────────────────────────────────────
   let eq = null, fx = null, pumping = false;
+
+  // HOW TALL THE BARS ARE, and the interesting part is where it is NOT done. eq-render.js has
+  // regionH/regionY — fractions of the space it draws in — and that looks like exactly this
+  // knob. It is not. A region pin drops the renderer into its fixed 1920x1080 stream frame and
+  // fits that frame into the source with one uniform scale, so on a tall phone stage a region
+  // would letterbox the equalizer into a 16:9 band floating in the middle rather than making
+  // the bars shorter. The renderer measures itself against its CANVAS BOX and nothing else
+  // (canvas.clientHeight, in its resize()), and the canvas is Pocket's own element. So Pocket
+  // changes the box, which is the one thing here it actually owns.
+  const EQH_KEY = 'hive-pocket.eqheight';
+  const EQH_DEF = 50;
+  function readEqHeight() {
+    let raw = null;
+    try { raw = localStorage.getItem(EQH_KEY); } catch (e) { /* private mode */ }
+    const n = Number(raw);
+    return (isFinite(n) && n >= 20 && n <= 100) ? Math.round(n / 5) * 5 : EQH_DEF;
+  }
+  function writeEqHeight(v) { try { localStorage.setItem(EQH_KEY, String(v)); } catch (e) {} }
+  // The box in CSS, then ONE re-measure by hand. Both renderers listen for window resize
+  // themselves, and changing a CSS custom property fires no resize event — so a height change
+  // without this line would look right on the next rotation and wrong until then, which is the
+  // worst kind of bug to be told about.
+  function applyEqHeight() {
+    const h = readEqHeight();
+    try { document.documentElement.style.setProperty('--eq-h', h + '%'); } catch (e) {}
+    if (eq && eqShown()) eq.resize();
+  }
 
   function initVisuals() {
     if (eq) return;
@@ -2410,6 +2457,7 @@
     reportSaid('');
     $('palSel').value = readPalette();
     $('eqSel').value = readEqStyle();
+    paintEqHeight();
     paintLook();
     $('visualsSel').value = visuals;
     setHidden($('motionNote'), !reducedMotion());
@@ -2445,7 +2493,7 @@
     text('valMusic', music);
     const look = currentLook();
     text('valLook', look === 'custom' ? 'Custom' : sel('lookSel'));
-    text('valEq', sel('eqSel'));
+    text('valEq', sel('eqSel') + ' \u00b7 ' + readEqHeight() + '%');
     text('valFx', sel('beatSel'));
     text('valScreen', sel('playerSel') + ' · ' + (readQualitySetting() === 'auto' ? 'Auto' : sel('qualSel')));
     const adv = readAdv();
@@ -2520,6 +2568,7 @@
     add('background', readAmbient());
     add('colours', readPalette() + (readPalette() === 'random' ? ' (rolled ' + eqPaletteNow + ')' : ''));
     add('equalizer', readEqStyle() + (readEqStyle() === 'random' ? ' (rolled ' + eqShapeNow + ')' : ''));
+    add('equalizer height', readEqHeight() + '%');
     add('sensitivity', readSens());
     add('size', readPunch());
     add('performance', readQualitySetting()
@@ -2788,12 +2837,13 @@
     $('tutNext').focus();
   }
 
-  function tutStart() { hideTip(); tutShow(0); }
+  function tutStart() { hideTip(); tutShow(0); paintRollHint(); }
   function tutEnd() {
     setHidden($('tut'), true);
     setHidden($('tutRing'), true);
     tutAt = -1;
     tutMarkSeen();
+    paintRollHint();
     if (!$('sheet').hidden) closeSheet();
   }
 
@@ -2819,11 +2869,94 @@
     renderQueue(); paintLib(); paintSheet();
   });
 
+  function paintEqHeight() {
+    const inp = $('eqHeight'); if (!inp) return;
+    const h = readEqHeight();
+    inp.value = String(h);
+    const out = $('eqHeightVal'); if (out) out.textContent = h + '%';
+    const row = $('eqHeightRow');
+    if (row) row.classList.toggle('moved', h !== EQH_DEF);
+  }
+  if ($('eqHeight')) {
+    // 'input' rather than 'change', for the same reason the advanced sliders use it: a height
+    // you cannot watch while dragging is a height you set by trial and error.
+    $('eqHeight').addEventListener('input', () => {
+      writeEqHeight(Number($('eqHeight').value));
+      applyEqHeight();
+      paintEqHeight();
+      try { paintGroupValues(); } catch (e) {}
+    });
+  }
+
+  // ── Start over ────────────────────────────────────────────────────────────────────────
+  // AN EXPLICIT LIST, not a sweep of every key beginning 'hive-pocket.'. A sweep decides in
+  // advance for keys that do not exist yet, so the next thing anyone saves is silently either
+  // wiped or kept depending on nothing at all. Every key in this file is in exactly one of
+  // these two lists and settings-smoke.js fails if a new one is in neither, which turns "did
+  // you think about reset" from a thing to remember into a thing that stops the build.
+  const RESET_KEYS = [VISUALS_KEY, MODES_KEY, AMBIENT_KEY, BEAT_KEY, SENS_KEY, PAL_KEY, EQ_KEY,
+    EQH_KEY, QUAL_KEY, PUNCH_KEY, DRIVE_KEY, TOUCH_KEY, PLAYER_KEY, HIDE_KEY, ADV_KEY, MIC_KEY];
+  // KEPT, each for its own reason. The links, the folder and its track names are the person's
+  // music rather than a setting. The report box is something they were part way through
+  // writing. The tutorial, the reminders already seen and the dice's one nudge are history: an
+  // app that replays all of it is an app that treats "put my settings back" as "pretend we have
+  // never met".
+  const KEEP_KEYS = [LINKS_KEY, NAMES_KEY, REPORT_KEY, TUT_KEY, TIPS_KEY, ROLLED_KEY];
+  const RESET_NOTE = 'Puts every setting back to how it arrived. Your music, your saved links '
+                   + 'and the folder you picked are not touched.';
+
+  function resetAll() {
+    for (const k of RESET_KEYS) { try { localStorage.removeItem(k); } catch (e) {} }
+    // The reminder SWITCH is a setting and comes back on. Which reminders have already been
+    // shown is not, and stays — replaying eleven of them at someone who has read them is
+    // precisely the nagware the reminders were built to avoid.
+    setTipsOn(true);
+    // Almost every setting is read from storage at the point of use, so clearing the key IS the
+    // reset. These are the ones that are not: they live in variables and have to be re-read.
+    readModes();
+    order = null; orderPos = -1;
+    applyVisuals('both');
+    applyPlayer();
+    applyEqHeight();
+    applyRenderers();
+    paintModes(); paintPlay(); paintSheet(); paintStageHint();
+    const ma = $('micAuto'); if (ma) ma.checked = false;
+  }
+
+  // TWO PRESSES rather than a browser confirm(). This is the only button in the app that throws
+  // anything away that cannot be got back by pressing something else, and it sits one tap inside
+  // a menu people open to change one thing. The arming window closes by itself, so a stray first
+  // press cannot lie in wait for a stray second one.
+  let resetArmed = 0;
+  function disarmReset() {
+    resetArmed = 0;
+    const btn = $('resetAll'); if (btn) btn.textContent = 'Reset all settings';
+    const note = $('resetNote'); if (note) note.textContent = RESET_NOTE;
+  }
+  if ($('resetAll')) {
+    $('resetAll').addEventListener('click', () => {
+      const now = Date.now();
+      if (!resetArmed || now - resetArmed > 6000) {
+        resetArmed = now;
+        $('resetAll').textContent = 'Press again to reset';
+        const note = $('resetNote');
+        if (note) note.textContent = 'Every setting goes back to how it arrived. Touch anything '
+                                   + 'else and nothing happens.';
+        setTimeout(() => { if (resetArmed === now) disarmReset(); }, 6000);
+        return;
+      }
+      disarmReset();
+      resetAll();
+      const note = $('resetNote');
+      if (note) note.textContent = 'Done — every setting is back to how it arrived.';
+    });
+  }
+
   $('lookSel').addEventListener('change', () => applyLook($('lookSel').value));
-  $('surpriseBtn').addEventListener('click', surprise);
+  $('surpriseBtn').addEventListener('click', () => { surprise(); markRolled(); });
   // The same action from the header. It flashes what it landed on, because a roll that changes
   // the picture with no word for what it did leaves you unable to ask for it again.
-  $('rollBtn').addEventListener('click', () => { surprise(); sayRoll(); });
+  $('rollBtn').addEventListener('click', () => { surprise(); sayRoll(); markRolled(); });
 
   // Names what was just rolled, on the stage, briefly. Uses the existing hint element rather than
   // adding a second overlay: it is already the one thing on the stage that speaks.
@@ -3660,6 +3793,8 @@
   micPaint();
   micNote('Not listening.');
   applyPlayer();
+  applyEqHeight();
+  paintRollHint();
   // Remembered microphone, reopened without a tap. This works — and ONLY works — because
   // getUserMedia needs no gesture once permission has been granted for this origin. It is a
   // promise that could not be kept for system audio, which is refused without a fresh tap
@@ -3708,6 +3843,14 @@
     get palette() { return readPalette(); },
     get eqStyle() { return readEqStyle(); },
     get eqShape() { return eqShapeNow; },
+    get eqHeight() { return readEqHeight(); },
+    get rolled() { return hasRolled(); },
+    get rollHint() { const b = $('rollBtn'); return !!(b && b.classList.contains('hint')); },
+    // The two lists themselves, so a suite can require every key in this file to be in one of
+    // them rather than trusting that somebody remembered.
+    get resetKeys() { return RESET_KEYS.slice(); },
+    get keepKeys() { return KEEP_KEYS.slice(); },
+    resetAll,
     surprise,
     get look() { return currentLook(); },
     get beatEffect() { return readBeatEffect(); },

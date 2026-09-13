@@ -66,7 +66,9 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'pocket.js'), 'utf8');
   const v = (id) => app.els(id).textContent;
   check('Music says nothing yet on a cold app', v('valMusic') === 'Nothing yet', v('valMusic'));
   check('Look names the look', v('valLook') === 'Hive', v('valLook'));
-  check('Equalizer names the style by label', v('valEq') === 'Bars', v('valEq'));
+  // Style AND height since 1.60.0: the height is the second thing anyone opens this group to
+  // check, and a summary that named only the style would send them in to find out.
+  check('Equalizer names the style by label', v('valEq') === 'Bars · 50%', v('valEq'));
   check('Effects names the burst', v('valFx') === 'Fireworks', v('valFx'));
   check('Screen says player and performance', /Everything · Auto/.test(v('valScreen')), v('valScreen'));
   check('Advanced says Defaults', v('valAdv') === 'Defaults', v('valAdv'));
@@ -77,7 +79,7 @@ const SRC = fs.readFileSync(path.join(__dirname, '..', 'pocket.js'), 'utf8');
   fire(eqSel, 'change');
   fire(app.els('sheet'), 'change');
   await settle();
-  check('a changed style reaches its readout', v('valEq') === 'Radial', v('valEq'));
+  check('a changed style reaches its readout', v('valEq') === 'Radial · 50%', v('valEq'));
   check('and the look drops to Custom', v('valLook') === 'Custom', v('valLook'));
 
   app.pocket.setAdv('eq', 'bands', 40);

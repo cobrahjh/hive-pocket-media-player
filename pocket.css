@@ -175,6 +175,13 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+/* HOW TALL THE BARS ARE. eq-render.js measures itself against its canvas box and nothing else,
+   so the honest way to make the equalizer shorter is to make its canvas shorter - not to send
+   the renderer a region, which would drop it into its fixed 16:9 stream frame and letterbox the
+   bars into a band floating in the middle of a tall phone stage. Bottom-anchored: top:auto
+   against the inherited bottom:0, so the bars keep standing on the floor and only the ceiling
+   moves. The effects and the lightning canvases are untouched and still have the whole stage. */
+#eqCanvas { top: auto; height: var(--eq-h, 50%); }
 #fxCanvas { pointer-events: none; transition: opacity 0.2s; }
 /* Above the effects, and never in the way of the gesture that creates it. */
 #boltCanvas { pointer-events: none; }
@@ -683,6 +690,9 @@ input[type="checkbox"].adv-in { width: 22px; height: 22px; justify-self: start; 
 .grp > .set, .grp > ul, .grp > p { padding-left: 0; }
 .grp > .set + .set, .grp > .set + ul, .grp > .set + p, .grp > .set + details { margin-top: 0.9rem; }
 .grp > .adv-h { margin-top: 0.9rem; }
+/* A control that FOLLOWS a nested group needs a line above it, or it reads as belonging to the
+   collapsed group it sits under - Start over looked like part of Report a problem. */
+.grp > .grp + .set { border-top: 1px solid var(--line); margin-top: 0.7rem; padding-top: 0.8rem; }
 
 
 /* Done is the way out and it sits where the thumb is, not at the end of a scroll. Sticky rather
@@ -726,3 +736,19 @@ input[type="checkbox"].adv-in { width: 22px; height: 22px; justify-self: start; 
 @keyframes tip-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
 /* A phone that asks apps to reduce motion gets the tip without the slide. */
 @media (prefers-reduced-motion: reduce) { .tip-bar { animation: none; } }
+
+
+/* ── the dice, until it has been pressed once ─────────────────────────────────────────────
+   Surprise me changes more of the picture in one tap than anything else in this app, and in the
+   header it looks exactly like every other icon. So it says so - quietly, on a long cycle, and
+   only until it has been pressed once ever. A header button that MOVES is a header button that
+   gets pressed by accident, so this is opacity and a soft ring and no transform at all. */
+@keyframes roll-hint {
+  0%, 70%, 100% { opacity: 0.6; box-shadow: 0 0 0 0 rgba(245, 166, 35, 0); }
+  84%           { opacity: 1;   box-shadow: 0 0 0 7px rgba(245, 166, 35, 0.12); }
+}
+#rollBtn.hint { animation: roll-hint 3.4s ease-in-out infinite; border-radius: 10px; }
+/* Nothing pulses when the phone has asked apps not to move. WHAT STOPS BEING VISIBLE is the
+   nudge and only the nudge: the dice is in the same place, with the same tooltip, and does the
+   same thing. It is also named in the reminders and in How it works. */
+@media (prefers-reduced-motion: reduce) { #rollBtn.hint { animation: none; opacity: 1; } }
