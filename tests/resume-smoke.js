@@ -70,7 +70,7 @@ async function pickAndPlay(app) {
   check('a dead renderer still plays', bad.media.paused === false);
   check('a dead renderer still builds the graph', bad.pocket.graphReady === true);
   const badNote = bad.els('nowSub').textContent;
-  check('a dead renderer SAYS SO', /visuals could not start/.test(badNote), badNote);
+  check('a dead renderer SAYS SO', /visuals would not start/.test(badNote), badNote);
   check('a dead renderer does not blame the phone', !/Tap play to start/.test(badNote), badNote);
 
   // ── 4. this suite must be able to fail ───────────────────────────────────────────────────

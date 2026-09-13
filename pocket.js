@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.58.0-beta';
+  const VERSION = '1.59.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -797,17 +797,17 @@
   // Each names ONE thing and fits two lines on a phone. Ordered by what a new person is most
   // likely to be missing rather than by what was hardest to build.
   const TIPS = [
-    { id: 'mic', text: 'The microphone draws whatever this phone can hear — another app, a speaker, the radio. It is in the menu under Music.' },
+    { id: 'mic', text: 'The microphone draws whatever this phone can hear — a speaker, the radio, another app. Menu, under Music.' },
     { id: 'paint', text: 'Drag a finger across the visuals and they paint. It works with no music at all.' },
     { id: 'full', text: 'Tap the visuals for full screen. Tap again to come back.' },
-    { id: 'wisps', text: 'Two fingers on the visuals send a pair of wisps wandering. Two fingers again sends them away.' },
-    { id: 'look', text: 'A Look sets the equalizer, the bursts, the colours and the background in one tap. Menu → Look.' },
+    { id: 'wisps', text: 'Two fingers on the visuals send a pair of lights floating off. Two fingers again calls them back.' },
+    { id: 'look', text: 'A Look sets the equalizer, the pops, the colours and the background in one tap. Menu → Look.' },
     { id: 'surprise', text: 'Surprise me rolls a whole new look. It never picks the two that flash.' },
-    { id: 'mini', text: 'The chevron on the player minimizes it and gives the visuals the room. Menu → Screen.' },
-    { id: 'drive', text: 'By default only the bass throws a burst. Menu → Effects → Reacts to lets the voices and cymbals in.' },
-    { id: 'advanced', text: 'Menu → Advanced has the renderers’ own knobs: bands, mirror, motion, attack and twenty more.' },
-    { id: 'offline', text: 'This works with no signal at all. Nothing here reaches the network after it loads.' },
-    { id: 'report', text: 'Something wrong? Menu → Help → Report a problem writes the whole state for you. Nothing sends itself.' },
+    { id: 'mini', text: 'The arrow on the player makes it small and gives the visuals more room. Menu → Screen.' },
+    { id: 'drive', text: 'To start with, only the bass makes things pop. Menu → Effects → Reacts to lets voices and cymbals in.' },
+    { id: 'advanced', text: 'Menu → Advanced has twenty more knobs: bands, mirror, motion, attack and the rest.' },
+    { id: 'offline', text: 'This works with no internet at all, every time you open it.' },
+    { id: 'report', text: 'Something wrong? Menu → Help → Report a problem fills it all in for you. Nothing sends itself.' },
   ];
 
   function readTips() {
@@ -1301,7 +1301,7 @@
       armResume();
     } else {
       micNote((fromGesture === false
-        ? 'Listening. Started by itself, because you asked it to.'
+        ? 'Listening. It started on its own, the way you asked.'
         : 'Listening.') + awake);
     }
     micPaint();
@@ -1571,8 +1571,8 @@
       failRun++;
       if (failRun >= MAX_FAIL_RUN) {
         failRun = 0;
-        $('nowSub').textContent = 'Five tracks in a row ended the moment they started, so it '
-          + 'stopped here. They may be empty or cut short. Press play to carry on anyway.';
+        $('nowSub').textContent = 'Five tracks in a row stopped the moment they started, so it '
+          + 'stopped here too. Press play to carry on anyway.';
         paintPlay();
         return;
       }
@@ -1583,7 +1583,7 @@
       // A link that refused the CORS request: drop the request and take the audio without
       // visuals, rather than skipping a track that would have played perfectly well.
       if (t && t.link && audio.corsTried) {
-        $('nowSub').textContent = 'Playing without visuals — that host does not allow this page to read its audio.';
+        $('nowSub').textContent = 'Playing, but no visuals — that site will not let this app read the sound.';
         play(current, { noCors: true });
         return;
       }
@@ -1596,8 +1596,8 @@
       failRun++;
       if (failRun >= MAX_FAIL_RUN) {
         failRun = 0;
-        $('nowSub').textContent = 'Five tracks in a row would not play, so it stopped here rather '
-          + 'than working through the rest. The files may be a format this phone cannot read.';
+        $('nowSub').textContent = 'Five tracks in a row would not play, so it stopped here. They '
+          + 'may be a kind this phone cannot read.';
         paintPlay();
         return;
       }
@@ -1619,8 +1619,8 @@
         busy(false);
         if (ok) play(i, opts);
         else {
-          $('nowSub').textContent = 'That file is no longer where it was. Choose the folder again '
-            + 'to pick up what changed.';
+          $('nowSub').textContent = 'That track has moved. Choose the folder again to pick up '
+            + 'what changed.';
         }
       });
       return;
@@ -1642,8 +1642,8 @@
     if (t.dead) {
       current = i;
       $('nowTitle').textContent = t.name;
-      $('nowSub').textContent = 'YouTube was removed from this app. This saved link cannot play; '
-        + 'remove it from the queue, or play the sound out loud and press Listen.';
+      $('nowSub').textContent = 'YouTube links cannot play here. Remove it from the list, or '
+        + 'play it out loud and press Listen.';
       renderQueue(); paintPlay();
       return;
     }
@@ -1702,8 +1702,8 @@
     // own, and that one is still true.
     if ($('nowSub').textContent === TAP_NOTE) $('nowSub').textContent = 'From this device';
     if (visualsFailed) {
-      $('nowSub').textContent = 'Playing, but the visuals could not start on this phone. '
-        + 'The sound is fine; the equalizer and effects are not running.';
+      $('nowSub').textContent = 'Playing, but the visuals would not start on this phone. The '
+        + 'sound is fine.';
     }
     paintMediaSession();
   }
@@ -2107,8 +2107,8 @@
     if (!remembered) {
       folderHandle = null;
       paintFolder();
-      folderNote('Playing, but this browser would not let the app remember the folder — you will '
-               + 'have to choose it again next time.', true);
+      folderNote('Playing, but this browser cannot remember the folder — you will have to pick '
+               + 'it again next time.', true);
     }
   }
 
@@ -2129,7 +2129,7 @@
     showPending();
     armAutoReconnect();
     if (state === 'denied') { folderNote('Your music folder is remembered, but this browser is '
-      + 'blocking it. Choose it again to reconnect.', true); return; }
+      + 'blocking it. Pick it again to reconnect.', true); return; }
     // WHY THIS SENTENCE EXISTS. Harold reconnected and then had to reconnect again — correctly,
     // because Chrome's permission prompt has three answers and the default one is for this visit
     // only. The app knew a tap was needed and said so, and said nothing about the choice inside
@@ -2140,8 +2140,8 @@
     // every time anyway. Promising "it stops asking" to someone it keeps asking is worse than
     // saying nothing, so the promise is gone and the option is named as something to try.
     folderNote('Your music folder is remembered — one tap brings it back. If Chrome offers '
-             + '"Allow on every visit", taking it may stop the asking; some phones ask every '
-             + 'time regardless, and that is the browser rather than this app.');
+             + '"Allow on every visit", taking it may stop the asking. Some phones ask every '
+             + 'time anyway, and that is the browser, not this app.');
   }
 
   // AS CLOSE TO AUTOMATIC AS THE PLATFORM ALLOWS. Android will not carry a file grant across a
@@ -2257,7 +2257,7 @@
     // Asking again is allowed and is the ordinary way back from a mis-tap on the sheet; choosing
     // the folder again is the last resort, not the first instruction.
     if (ok !== 'granted') { folderNote('The folder was not allowed. Tap any track to ask again, '
-      + 'or choose the folder again from the folder button.', true); return; }
+      + 'or pick the folder again with the folder button.', true); return; }
     await loadFolder(folderHandle);
   }
 
@@ -2353,9 +2353,9 @@
     // Refused at the door rather than saved as a row that cannot play. The microphone is a real
     // answer here and not a consolation: it is how this app visualises anything it cannot read.
     if (isDeadLink(u)) {
-      saveNote('YouTube was removed from this app — its sound comes from another site and the '
-             + 'equalizer and effects could never see it. Play it in the YouTube app out loud '
-             + 'and press Listen, and the visuals follow it properly.', true);
+      saveNote('YouTube sound comes from another site, so the visuals could never see it. Play '
+             + 'it out loud in the YouTube app and press Listen instead — then they follow it '
+             + 'properly.', true);
       return;
     }
     const links = readLinks();
@@ -2662,8 +2662,8 @@
       const s = window.getSelection();
       s.removeAllRanges();
       s.addRange(r);
-      reportSaid('This phone would not let the app use the clipboard, so the whole report is '
-               + 'selected below instead — copy it from there.', true);
+      reportSaid('This phone would not let the app copy, so the whole report is selected below '
+               + 'instead — copy it from there.', true);
     } catch (e2) {
       reportSaid('This phone would not let the app copy. Open the details below and copy the '
                + 'text by hand.', true);
@@ -2689,26 +2689,26 @@
           + 'the only one — it works with no music at all. Seven quick steps.' },
     { at: '#stage', title: 'The stage',
       body: 'Everything is drawn here. Tap it for full screen, and tap again to come back. '
-          + 'Drag a finger across it and it paints — that works right now, with silence. Two '
-          + 'fingers send a pair of wisps wandering off; two fingers again sends them away.' },
+          + 'Drag a finger across it and it paints — try it right now, with silence. Two '
+          + 'fingers send a pair of lights floating off; two fingers again calls them back.' },
     { at: '#micBtn', title: 'Listen to the room', menu: true,
-      body: 'The microphone is the big one. Play music out loud from anything — this phone, a '
-          + 'speaker, a laptop, the radio — press this, and the visuals follow it. It is the only '
-          + 'way to see sound this app cannot read, and nothing you hear is recorded or sent.' },
+      body: 'The big one. Play music out loud from anything — this phone, a speaker, a '
+          + 'laptop, the radio — press this, and the visuals follow it. It is the only way to '
+          + 'see music this app cannot read, and nothing is recorded.' },
     { at: '#pickBtn', title: 'Or your own files',
-      body: 'Choose music from this phone. The folder is remembered — your tracks are listed '
-          + 'again the moment you open the app. Android will not carry the PERMISSION across a '
-          + 'cold start, so the first thing you touch asks for it back and the music returns.' },
+      body: 'Choose music from this phone. The folder is remembered, so your tracks are listed '
+          + 'again the moment you open the app. Android makes you say yes once more each time, '
+          + 'so the first thing you touch asks, and the music comes back.' },
     { at: '#menuBtn', title: 'Looks',
-      body: 'Settings opens here. Start with Look at the top — one tap sets the bursts, the '
-          + 'colours, the equalizer and the background together. The dropdowns underneath are '
-          + 'there when you want to take one apart.' },
+      body: 'Settings open here. Start with Look at the top — one tap sets the pops, the '
+          + 'colours, the equalizer and the background together. Everything underneath is there '
+          + 'when you want to change one thing at a time.' },
     { at: '#rollBtn', title: 'Surprise me',
-      body: 'Rolls all of it at once. It is the fastest way to find a combination worth keeping, '
+      body: 'Rolls all of it at once. It is the fastest way to find something worth keeping, '
           + 'and it never picks the two that flash the screen — those you choose by name.' },
     { title: 'That is everything',
       body: 'The menu has How it works if you want more, and Report a problem when something '
-          + 'is wrong. Show me around brings this back any time.' },
+          + 'goes wrong. Show me around brings this back any time.' },
   ];
 
   let tutAt = -1;
