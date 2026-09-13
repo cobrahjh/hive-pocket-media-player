@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.62.0-beta';
+  const VERSION = '1.63.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2452,10 +2452,29 @@
   // donate button that goes nowhere is worse than no donate button, and a placeholder is exactly
   // the kind of thing that ships. https only — a payment link over http is not a small mistake.
   const DONATE_URL = '';
+
+  // AND IT IS HIDDEN INSIDE THE PLAY APP, which is not caution — it is Google's Payments Policy
+  // section 3: an app may not lead users to a payment method other than Play's billing, and the
+  // only donation exception is a VALIDATED TAX-EXEMPT ORGANISATION. Checked on 2026-09-13:
+  // AnkiDroid was told to remove its Open Collective link or be delisted by 2026-09-11, and
+  // Google rejected the 501(c)(6) determination letter it was shown. An individual's Ko-fi page
+  // is not close to the line. The external-content-links program does not help either: it is for
+  // purchases of digital items, Google takes 10-20%, and it does not cover donations at all.
+  //
+  // So the link lives on the WEB and not in the store build. That is compliance rather than
+  // evasion — the thing the policy forbids is the app leading people to it, and inside the app
+  // it does not exist.
+  //
+  // Read ONCE at load. A Trusted Web Activity sets the referrer to android-app://<package> on
+  // the launch navigation, and only on that one, so a later read would find it gone and quietly
+  // start showing the link in the store build.
+  const fromPlay = (() => {
+    try { return /^android-app:\/\//.test(document.referrer || ''); } catch (e) { return false; }
+  })();
   function paintDonate() {
     const row = $('donateRow'), a = $('donateLink');
     if (!row || !a) return;
-    const ok = /^https:\/\/[^\s"']+$/.test(DONATE_URL);
+    const ok = !fromPlay && /^https:\/\/[^\s"']+$/.test(DONATE_URL);
     setHidden(row, !ok);
     if (!ok) return;
     // setAttribute, not `a.href = ...`, and all three set HERE rather than trusted to the
@@ -3921,6 +3940,7 @@
     get tutorialSeen() { return tutSeen(); },
     get tutorialRev() { return TUT_REV; },
     get donateUrl() { return DONATE_URL; },
+    get fromPlay() { return fromPlay; },
     get canRemember() { return canRemember(); },
     get folderRemembered() { return !!folderHandle; },
     get folderDiag() {

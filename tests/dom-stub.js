@@ -426,6 +426,12 @@ function boot(opts) {
     // Every real document has a body, and the app toggles a class on it to resize the player.
     // Same rule as the renderer fakes: what the app legitimately uses, the stub carries.
     body: el('body'),
+    // WHAT LAUNCHED THIS PAGE. A Trusted Web Activity — the Play build — sets the referrer to
+    // android-app://<package> on the launch navigation, and that is the only signal the page
+    // gets that it is running inside the store app rather than in a browser. The donate link is
+    // hidden there on purpose (Play's Payments Policy), so a stub with no referrer at all could
+    // only ever test the half of that rule that shows the link.
+    referrer: o.referrer || '',
     // The <html> element, for the one thing the app writes on it: --eq-h, the equalizer
     // canvas's height. RECORDED rather than swallowed, because "the height was saved" and "the
     // box actually changed" are two different claims and only the second one is what anybody

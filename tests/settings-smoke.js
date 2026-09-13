@@ -280,6 +280,38 @@ function usedStore(extra) {
     await settle();
     check('an http address is refused', !shown(plain.els('donateRow')),
       'a payment link served over http must not be offered at all');
+
+    // AND NOT IN THE PLAY BUILD AT ALL. Google's Payments Policy section 3 allows a donation
+    // link only for a validated tax-exempt organisation, and in August 2026 it made AnkiDroid
+    // strip its Open Collective link after rejecting a 501(c)(6) determination letter. A live
+    // link here is not a cosmetic bug, it is the listing.
+    const LIVE = "const DONATE_URL = 'https://ko-fi.com/example';";
+    const store = boot({
+      src: SRC.replace(DECL, LIVE),
+      store: usedStore(),
+      referrer: 'android-app://online.kinghive.pocket',
+    });
+    await settle();
+    fire(store.els('menuBtn'), 'click');
+    await settle();
+    check('the app knows it was launched from Play', store.pocket.fromPlay === true);
+    check('and the donate link is not there', !shown(store.els('donateRow')),
+      'a donate link inside the Play build is a payments-policy violation, not a design choice');
+    check('while the web build still has it', paid.pocket.fromPlay === false
+      && shown(paid.els('donateRow')));
+
+    // An ordinary web referrer is not a Play launch, or every link from another site would
+    // silently switch the feature off.
+    const web = boot({
+      src: SRC.replace(DECL, LIVE),
+      store: usedStore(),
+      referrer: 'https://github.com/cobrahjh/hive-pocket-media-player',
+    });
+    await settle();
+    fire(web.els('menuBtn'), 'click');
+    await settle();
+    check('arriving from a website is not arriving from Play', web.pocket.fromPlay === false
+      && shown(web.els('donateRow')));
   }
 
   // ── 12. this suite must be able to fail ──────────────────────────────────────────────────

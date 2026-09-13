@@ -56,6 +56,26 @@ never be updated again by anyone.
 
 5. **Store listing** — copy in `listing.md`, already inside the character limits.
 
+## The donate link must not appear in the store build
+
+Checked 13 September 2026. Google's **Payments Policy section 3** says an app may not lead users
+to a payment method other than Play's billing, and the only donation exception is a **validated
+tax-exempt organisation**. This is actively enforced: AnkiDroid was told to strip its Open
+Collective link or be delisted by 11 September 2026, and Google rejected the 501(c)(6)
+determination letter it produced. An individual's Ko-fi page is nowhere near that line.
+
+The **external content links program** does not rescue it either — that is for purchasing digital
+items, Google takes 10–20% from 1 October 2026, and it says nothing about donations.
+
+So `pocket.js` hides the row whenever `document.referrer` starts with `android-app://`, which is
+what a TWA sets on its launch navigation. **That is compliance, not evasion:** what the policy
+forbids is the app leading people to another payment method, and inside the Play build the link
+does not exist. It stays on the website, which Play does not govern.
+
+`settings-smoke.js` asserts both halves — hidden from a Play launch, shown from a web one — so it
+cannot regress into a listing problem quietly. Answer the Data safety and payments questions
+accordingly: **no in-app purchases, no ads, no external payment links.**
+
 6. **App content declarations.** Privacy policy URL is
    https://pocket.kinghive.online/privacy.html. The Data safety form is unusually easy here: no
    data collected, no data shared, no data transmitted off the device. Content rating
