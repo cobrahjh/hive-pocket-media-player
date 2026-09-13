@@ -33,6 +33,13 @@ A browser keeps storage per origin, so the old install's remembered folder, save
 settings stay behind on the old address and do not travel. Tapping the old icon now lands outside
 that install's own scope, so it opens a browser tab rather than the app.
 
+## The tour, once
+
+The seven-step tour runs by itself the first time you open the app, and after that only when the
+tour itself is rewritten — not on every release. Before 1.61.0 it was keyed to the app's version
+number, which meant a new build interrupted everyone who had already taken it. **Show me around**
+in Help runs it whenever you want it.
+
 ## It works offline
 
 Once loaded, the app needs no network for anything. The service worker keeps the code, and the

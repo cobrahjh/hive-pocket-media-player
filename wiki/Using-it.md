@@ -28,28 +28,67 @@ that is the host's decision and nothing here can change it.
 - **Drag or press** and they paint — bursts follow your finger in the current effect and colours.
   This works with no music at all, which makes it the one thing here that needs nothing but a
   finger.
-- **Two fingers** send a pair of wisps off wandering, each trailing a long fading tail and
+- **Two fingers** send a pair of lights off wandering, each trailing a long fading tail and
   throwing a different effect wherever it goes. They keep going until you press two fingers
-  again, which sends them away.
+  again, which calls them back.
 
 Any of those turns the effects on if they were off, because a finger on the stage is a request to
 draw something. A plain tap does not — that is still full screen and nothing else.
 
+## The menu
+
+Eight groups — Music, Look, Equalizer, Effects, Screen, Advanced, Help, About — and a closed
+group **says its current value**, so you can tell whether to open one without opening it. It
+comes down from the three-bar button that opened it, and **Done** stays at the bottom of the
+panel where your thumb already is rather than at the end of a scroll.
+
 ## What you can set
 
 A **Look** — Hive, Bonfire, Deep freeze, Night drive, Garden, Ink, Storm — sets the burst effect,
-the colours, the equalizer style, the background and the sensitivity in one tap. **Surprise me**
-rolls all five.
+the colours, the equalizer style, the background and the sensitivity in one tap. **Surprise me**,
+the dice in the header, rolls all five. It pulses gently until you have pressed it once, because
+it changes more of the picture in one tap than anything else here and otherwise looks like every
+other icon in the row.
 
 Underneath: seven equalizer styles, six burst effects plus lightning and fairy, five palettes,
 fourteen backgrounds, three sensitivities, four burst sizes, performance mode, which parts of the
 sound throw a burst, what a finger does, and how much of the player is on screen.
+
+**Equalizer → Height** is how much of the screen the bars are allowed to use — 20% to 100%, and
+**half by default**. The bars stand on the floor of the stage and only the ceiling moves. The
+bursts, the lightning and the background are untouched by it; they always have the whole stage.
+
+**Advanced** holds the renderers' own knobs — twenty for the equalizer, six for the effects:
+bands, gain, gap, caps, mirror, segments, thickness, glow, radius, attack, release and a whole
+motion system. Nothing there is part of a Look, in both directions: a Look will not undo what you
+change there, and changing it will not drop the Look picker to Custom. Anything you move is
+marked, and **Reset the equalizer** / **Reset the effects** put those back on their own.
 
 **Storm and lightning flash the screen.** If flashing bothers you, or you are photosensitive,
 leave those alone — they are never chosen for you by Random or Surprise me. Pick one and three
 limits apply that no setting can raise: the flash never exceeds 0.12 opacity, strikes never land
 inside 0.8 seconds of each other, and at most six bolts are alive at once. All of it is dropped
 entirely when the phone asks apps to reduce motion.
+
+## Help, and how the app explains itself
+
+- **Show me around** replays the seven-step tour. It runs once by itself the first time you open
+  the app, and after that only when the tour itself is rewritten — not on every release.
+- **Feature reminders** put one line on the stage now and then, naming one thing the app can do.
+  One a day at most, never the same one twice, never during the tour, gone after eleven seconds,
+  and they never swallow a tap — a reminder sitting over the visuals cannot eat the drag it is
+  describing. The pool of eleven empties in a fortnight and is then silent for good. Turn them
+  off in **Help → Feature reminders**; the only thing that stops being visible is the sentences,
+  since everything they name is in **How it works**.
+- **How it works** is the long version, kept in the menu rather than written on the stage.
+
+## Start over
+
+**Help → Start over → Reset all settings**, which takes two presses. It puts every setting back
+to how it arrived, and that is all it does. It does **not** touch your saved links, your music
+folder, the track names it remembered, or a problem report you were part way through writing. The
+reminder switch comes back on, but reminders you have already seen stay seen — being walked
+through all eleven again is not what "put my settings back" should mean.
 
 ## Performance
 

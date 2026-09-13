@@ -210,7 +210,47 @@ function usedStore(extra) {
   tour.pocket.tutEnd();
   check('and it comes back when the tour ends', tour.pocket.rollHint === true);
 
-  // ── 10. this suite must be able to fail ──────────────────────────────────────────────────
+  // ── 10. the tour runs again when the TOUR changes, not when the app does ─────────────────
+  // It used to key off VERSION, so a seven-step tutorial interrupted everyone on every release
+  // — at a release every few days, that is a tour every few days at people who have taken it.
+  // The revision is bumped by hand, which is the right call and the kind that goes stale, so
+  // the steps are pinned to a digest here: change a step without bumping TUT_REV and this
+  // fails, change nothing and it stays quiet.
+  const TUT_TEXT = /const TUT = \[[\s\S]*?\n  \];/.exec(SRC)[0].replace(/\s+/g, ' ');
+  const TUT_SHA = require('crypto').createHash('sha1').update(TUT_TEXT).digest('hex').slice(0, 12);
+  const PINNED = { rev: 1, sha: '34aa8ea490a7' };
+  const revNow = Number(/const TUT_REV = (\d+);/.exec(SRC)[1]);
+  check('the tour is pinned to a revision',
+    TUT_SHA === PINNED.sha || revNow > PINNED.rev,
+    'the tutorial steps changed (' + TUT_SHA + ') but TUT_REV is still ' + revNow + '. Either '
+    + 'the rewrite deserves to interrupt everyone again - bump TUT_REV and update PINNED here - '
+    + 'or it does not, and only PINNED.sha moves.');
+  check('and the revision is not a version string', /^\d+$/.test(String(revNow)), String(revNow));
+
+  const cold = boot({ store: new Map() });
+  await settle();
+  check('a brand new app has not seen the tour', cold.pocket.tutorialSeen === false);
+
+  const sameRev = boot({ store: (() => { const s = new Map(); s.set('hive-pocket.tutorial', String(revNow)); return s; })() });
+  await settle();
+  check('the same revision counts as seen', sameRev.pocket.tutorialSeen === true);
+
+  const oldRev = boot({ store: (() => { const s = new Map(); s.set('hive-pocket.tutorial', String(revNow - 1)); return s; })() });
+  await settle();
+  check('an older revision runs it again', oldRev.pocket.tutorialSeen === false,
+    'a rewritten tour must be able to reach someone who saw the old one');
+
+  // The migration, and the whole point of the release. Every key written before 1.61.0 holds a
+  // version string; not one of those people should be walked through the tour again.
+  for (const old of ['1.60.0-beta', '1.24.0-beta', '1.58.0-beta']) {
+    const carried = boot({ store: (() => { const s = new Map(); s.set('hive-pocket.tutorial', old); return s; })() });
+    await settle();
+    check('"' + old + '" counts as already seen', carried.pocket.tutorialSeen === true,
+      'a version string in this key means a tour was taken; replaying it to celebrate a change '
+      + 'in numbering is the bug this release removes');
+  }
+
+  // ── 11. this suite must be able to fail ──────────────────────────────────────────────────
   // Cut the re-measure out of applyEqHeight and require case 3 to collapse. Without this the
   // whole file could be asserting things that are true of a broken build as well.
   const LINE = "    if (eq && eqShown()) eq.resize();\n  }";

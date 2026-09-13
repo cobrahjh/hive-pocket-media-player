@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.60.0-beta';
+  const VERSION = '1.61.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2732,6 +2732,12 @@
   // The card moves to whichever half of the screen the ring is NOT in, which is the whole reason
   // the position is computed rather than written down.
   const TUT_KEY = 'hive-pocket.tutorial';
+  // Bump this when a STEP changes — not when the app does. settings-smoke.js carries a digest
+  // of the steps below and fails if they move without this moving too, so "does this rewrite
+  // deserve to interrupt everyone again?" is a question that gets asked rather than one that
+  // gets answered by accident in both directions.
+  const TUT_REV = 1;
+
   const TUT = [
     { title: 'This is a visualizer',
       body: 'It draws whatever it can hear. Music on this phone is one way to feed it, and not '
@@ -2762,12 +2768,27 @@
 
   let tutAt = -1;
 
+  // THE TOUR RAN AGAIN ON EVERY RELEASE, and that was this one line. The key held the app
+  // VERSION, and the reasoning behind it was sound — a rewritten tutorial should be able to run
+  // again for someone who saw an older one — but it fired for every version rather than for
+  // every rewrite. At a release every few days that is a seven-step tour every few days, at
+  // people who have already taken it. A revision is bumped when the TOUR changes, by hand, and
+  // settings-smoke.js fails if the steps move without it.
   function tutSeen() {
-    try { return localStorage.getItem(TUT_KEY) === VERSION; } catch (e) { return true; }
+    try {
+      const v = localStorage.getItem(TUT_KEY);
+      if (!v) return false;
+      // MIGRATION, once and forever. Every key written before this change holds a version
+      // string, and the only honest reading of one is "this person has already been shown a
+      // tour". Walking them through it again to celebrate a change in numbering is the exact
+      // thing this release is fixing, so a version string counts as seen.
+      if (v.indexOf('.') >= 0) return true;
+      return v === String(TUT_REV);
+    } catch (e) { return true; }
   }
   // Stamped with the VERSION, not a bare 'true': a rewritten tutorial should be able to run
   // again for someone who saw an older one, without a second key to keep in step.
-  function tutMarkSeen() { try { localStorage.setItem(TUT_KEY, VERSION); } catch (e) {} }
+  function tutMarkSeen() { try { localStorage.setItem(TUT_KEY, String(TUT_REV)); } catch (e) {} }
 
   function tutPlace() {
     const step = TUT[tutAt];
@@ -3871,6 +3892,7 @@
     get tutorialStep() { return tutAt; },
     get tutorialSteps() { return TUT.length; },
     get tutorialSeen() { return tutSeen(); },
+    get tutorialRev() { return TUT_REV; },
     get canRemember() { return canRemember(); },
     get folderRemembered() { return !!folderHandle; },
     get folderDiag() {

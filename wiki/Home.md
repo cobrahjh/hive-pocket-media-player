@@ -19,7 +19,14 @@ network at all after the first load.
 Point it at music on the phone and it plays, drawing an equalizer and effects from that audio.
 Point the **microphone** at the room and it draws whatever it can hear, including music playing
 from a completely different app. Touch the visuals and they answer: drag to paint, two fingers to
-send a pair of wisps wandering. Tap for full screen.
+send a pair of lights wandering. Tap for full screen.
 
 Everything here is drawn from sound the app can actually read, which is why the microphone
 matters: it is the one source that can see audio this app does not own.
+
+## If you only read one thing
+
+The menu is eight groups and a closed one **says its own value**, so you can tell whether to open
+it without opening it. **Surprise me** — the dice in the header — changes more of the picture in
+one tap than anything else. **Show me around** in Help replays the tour. And **Start over** puts
+every setting back without touching your music, your links or your folder.

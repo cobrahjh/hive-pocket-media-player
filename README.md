@@ -30,12 +30,26 @@ scope and opens a browser tab instead of the app.
 - **Draws an equalizer and effects** from the audio it is playing — or, with the microphone,
   from whatever it can hear in the room, including music from another app entirely.
 - **Answers your finger.** Drag or press on the visuals and they paint. Two fingers send a pair
-  of wisps wandering off; two fingers again sends them away.
+  of wisps wandering off; two fingers again sends them away. (The app calls them *lights* — the
+  code and this README call them wisps, and they are the same thing.)
 - **Tap the visuals for full screen.** Tap again to come back.
 - **Lock-screen controls**, and it works offline.
 
-Every control has a tooltip, Settings has a **How it works** list, and **Show me around** in the
-menu replays the seven-step tutorial.
+## Finding your way around it
+
+Every control has a tooltip, and the settings sheet is eight groups — Music, Look, Equalizer,
+Effects, Screen, Advanced, Help, About — each of which says its current value while closed, so
+you can tell whether to open one without opening it.
+
+- **Show me around** replays the seven-step tour. It runs once by itself on a first visit, and
+  again only when the tour itself is rewritten — not on every release.
+- **Feature reminders** put one line on the stage now and then, naming one thing the app can do.
+  One a day at most, never the same one twice, and the pool of eleven runs out in a fortnight and
+  is then silent for good. Off in Help → Feature reminders; everything a reminder names is also
+  in **How it works**.
+- **Reset all settings** — Help → Start over. Two presses. It puts every setting back to how it
+  arrived and touches nothing else: your saved links, your music folder, its remembered track
+  names and a half-written problem report all stay.
 
 ## Three things worth knowing
 
@@ -74,21 +88,29 @@ when pressed rather than failing silently.
 
 It globs `*-smoke.js`, so a new suite is picked up without editing anything:
 
+    advanced-smoke.js    the renderers' own knobs, and setConfig replacing rather than merging
     ambient-smoke.js     the effect picker, and whether a flashing mode strikes
     folder-smoke.js      the remembered folder, and the first touch that asks for it back
     resume-smoke.js      a play blocked by the phone, then resumed by a tap
+    settings-smoke.js    reset, the equalizer's height, the dice hint, the tutorial revision
+    sheet-smoke.js       the settings sheet's groups, ids and readouts
+    tips-smoke.js        the rules that stop feature reminders becoming nagware
     transport-smoke.js   the play button's glyph, and never both at once
     visuals-smoke.js     what is on the stage, and the tap that fills the screen
     wisp-smoke.js        the two-finger toggle, a box change, and a rotation
 
 All of them run under plain Node against `tests/dom-stub.js`, and each one mutates the code under
-test and requires its own assertion to fail. Two rules the suites are built on:
+test and requires its own assertion to fail. Three rules the suites are built on:
 
 - **A fake that is a subset of the real thing** does not make a suite weaker in an obvious place,
   it makes it wrong in a confusing one. The stub reads `index.html` for which ids are `<svg>` and
   which start hidden, rather than being told.
 - **A case that cannot be shown to fail against the build it was written for is decoration.**
   New cases are run against the historical `pocket.js` from the tag that had the bug.
+- **A decision nobody can forget to make.** Two of these suites turn a thing to remember into a
+  thing that stops the build: every storage key must be in `RESET_KEYS` or `KEEP_KEYS`, and the
+  tutorial's steps are pinned to a digest so they cannot be rewritten without someone choosing
+  whether that rewrite deserves to interrupt everyone again.
 
 The stub's own header explains why these are not browser tests.
 

@@ -16,6 +16,12 @@ target of one and the source of none.
 the folder first. Names only. They never leave the device either, and **Forget the folder** in
 Settings removes them.
 
+**Your settings live there too**, alongside your saved links and anything you were part way
+through typing into a problem report. All of it is your browser's storage on your phone; none of
+it is sent anywhere, and there is nowhere for it to go. **Help → Start over → Reset all settings**
+clears the settings and deliberately leaves the rest — your links, your folder and its track
+names are yours, not preferences.
+
 **A problem report is written by you and sent by you.** The app fills in what it can see about
 itself and hands the text to your mail app; you press send there. It carries settings, counters,
 screen dimensions and the browser's user-agent string. It does **not** carry the names of your

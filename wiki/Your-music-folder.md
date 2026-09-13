@@ -30,6 +30,12 @@ and this app has no way to send anything — it makes no network request at all 
 app says so on screen before the prompt appears, because meeting that sentence cold when all you
 did was press play is a fair thing to be alarmed by.
 
+## What Reset all settings does to it
+
+Nothing. **Help → Start over** puts the settings back and deliberately leaves the folder, the
+track names it remembered, and your saved links alone — those are your music, not preferences.
+**Forget the folder**, in Music, is the button that stops it being remembered.
+
 ## If it says the folder was denied
 
 Tap any track to ask again, or use the folder button in Settings. Choosing the folder again is the

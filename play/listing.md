@@ -25,7 +25,7 @@ The full description is indexed by Play, so it is written as prose rather than a
     visualizers cannot do: it does not need to own the music to see it.
 
     Touch the screen and it answers. Drag a finger and it paints in whatever effect and colours
-    are set. Press two fingers and a pair of wisps drift off across the stage, trailing long
+    are set. Press two fingers and a pair of lights drift off across the stage, trailing long
     fading tails and throwing bursts wherever they go, until you press two fingers again. Tap
     once for full screen.
 
@@ -62,8 +62,8 @@ Roughly 1,500 characters, well inside the limit, with room to add later.
 
       screenshot-01-hive-player.png        playing a track, pause showing, queue populated
       screenshot-02-fullscreen-freeze.png  Deep freeze, full screen, line equalizer and a nova
-      screenshot-03-wisps-garden.png       two wisps mid-drift with their tails, hearts, dots eq
-      screenshot-04-paint-bonfire.png      Bonfire, a finger painting, wisps still roaming
+      screenshot-03-wisps-garden.png       two lights mid-drift with their tails, hearts, dots eq
+      screenshot-04-paint-bonfire.png      Bonfire, a finger painting, lights still roaming
       screenshot-05-settings-drive.png     the Look picker and settings
       screenshot-06-advanced.png           the Advanced group
 
@@ -73,7 +73,8 @@ Roughly 1,500 characters, well inside the limit, with room to add later.
 **How they were made**, so they can be remade after a visual change: a headless Chromium at
 360 × 640 with a device scale of 3, a generated 40-second track fed through Chrome's fake
 microphone (`--use-file-for-fake-audio-capture`), and the app's own Look picker driven between
-shots. The tutorial is skipped and the queue for shot 1 is six real WAV files picked through the
+shots. The tutorial is skipped by writing `hive-pocket.tutorial` before load — since 1.61.0 that
+key holds `TUT_REV` (a bare number) rather than the version string. The queue for shot 1 is six real WAV files picked through the
 file input, so no row reads *tap to unlock* — a locked queue in a store screenshot reads as a
 paywall.
 
