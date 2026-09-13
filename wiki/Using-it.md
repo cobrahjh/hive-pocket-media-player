@@ -32,6 +32,14 @@ that is the host's decision and nothing here can change it.
   throwing a different effect wherever it goes. They keep going until you press two fingers
   again, which calls them back.
 
+**Effects → Your finger** picks what a drag draws: lightning and a burst, lightning on its own, a
+burst on its own, **ripples**, ripples and a burst, or nothing. Ripples are rings that leave your
+finger and widen, three at a time, the way a drop does on water.
+
+**Effects → Your finger throws** picks *which* burst it throws, separately from the music.
+Hearts under your finger while fireworks go off on the beat. Leave it on *The same as the beat*
+and it does what it always did.
+
 Any of those turns the effects on if they were off, because a finger on the stage is a request to
 draw something. A plain tap does not — that is still full screen and nothing else.
 

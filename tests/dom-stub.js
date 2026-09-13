@@ -567,7 +567,15 @@ function boot(opts) {
         setConfig: (c) => { fxConfigs.push(c); },
         pushBands: noop, start: noop, stop: noop, say: noop,
         setPlayerUp: noop, isAudioLive: () => false, getBpm: () => ({ bpm: null }),
-        fire: () => fires.push([].slice.call(arguments)),
+        // AN ARROW FUNCTION HAS NO `arguments`. This line read
+        //     fire: () => fires.push([].slice.call(arguments))
+        // from the day the fake was written, and in CommonJS `arguments` resolves to the MODULE
+        // WRAPPER's arguments — exports, require, module, __filename, __dirname — so it never
+        // threw and never recorded a burst. Every call the app has ever made pushed the same
+        // five unrelated objects. Nothing caught it because `fires` was not exported, so no
+        // suite could ask what the app had fired: a fake that lies is worse than one that is
+        // missing, because a missing one throws.
+        fire: (effect, opts) => fires.push({ effect, opts: opts || {} }),
         stats: () => ({ parts: 0, ambient: 0, shells: 0, bolts: 0 }),
         getConfig: () => ({ beat: { intensity: 1, effect: 'fireworks', enabled: true },
                             effects: {}, particleCap: 0 }),
@@ -611,6 +619,8 @@ function boot(opts) {
     yt,
     resizes,
     cssVars,
+    /** Every fx.fire() the app made, in order: {effect, opts}. See the fake's own note. */
+    fxFires: fires,
     eqConfigs,
     fxConfigs,
     store,

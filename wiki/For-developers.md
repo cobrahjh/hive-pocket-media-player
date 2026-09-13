@@ -26,6 +26,7 @@ that crashes is reported as a failure with its output, never skipped.
 
     advanced-smoke.js    the renderers' own knobs, and setConfig replacing rather than merging
     ambient-smoke.js     the effect picker, and whether a flashing mode strikes
+    finger-smoke.js      ripples, and what a finger throws when it is not the beat
     folder-smoke.js      the remembered folder, and the first touch that asks for it back
     resume-smoke.js      a play blocked by the phone, then resumed by a tap
     settings-smoke.js    reset, the equalizer's height, the dice hint, the tutorial revision
@@ -77,6 +78,14 @@ band floating in the middle. The renderer measures itself against `canvas.client
 nothing else, so Pocket sets a CSS custom property on the canvas — and then calls `eq.resize()`
 by hand, because changing a custom property fires no resize event and both renderers re-measure
 on window resize alone.
+
+**Everything drawn on the bolt canvas needs three decisions, not one.** It holds bolts, wisps
+and — since 1.64.0 — ripples, and each of them answers separately to `clearBolts()` (the layer is
+going away), `clearStrikes()` (the finger's own drawing stops) and `reflowBolts()` (the box
+changed). The trap is the LOOP's stop condition: it clears the canvas and returns once its lists
+are empty, so a new list missing from that check is drawn once and then abandoned — alive in
+memory, invisible on screen, with no error anywhere. That is what went wrong when wisps were
+added, and `finger-smoke.js` asserts it now rather than trusting anyone to remember.
 
 **A touch `pointerdown` carries no user activation.** A finger gets it on `pointerup` and
 `touchend`; `pointerdown` counts only for a mouse. Asking for a permission on the wrong one makes

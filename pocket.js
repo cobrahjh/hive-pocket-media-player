@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.63.0-beta';
+  const VERSION = '1.64.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -610,9 +610,12 @@
   // idea and is resolved per burst here, which is what makes Random actually vary.
   const FAIRY_EFFECTS = ['fireworks', 'confetti', 'embers', 'hearts', 'fountain', 'nova'];
 
-  function fireOne(x, y, intensity, palette) {
+  // `want` overrides the Bursts setting for this one burst, which is what lets a finger throw
+  // something the beat is not throwing. Null means "whatever the music is throwing", which is
+  // what every caller but the finger passes and what the finger did until 1.64.0.
+  function fireOne(x, y, intensity, palette, want) {
     if (!fx) return;
-    let effect = readBeatEffect();
+    let effect = want || readBeatEffect();
     if (effect === 'random') effect = pick(ROLLABLE_EFFECTS);
     // strike() keeps its own gap, so calling it from two places in the same frame — a finger and
     // a detector — costs one bolt, not two.
@@ -626,12 +629,31 @@
   // hits, which reads as cause and effect. 'off' still swallows the drag — a drag has never
   // toggled full screen and should not start now — it simply draws nothing.
   const TOUCH_KEY = 'hive-pocket.touch';
-  const TOUCH_MODES = ['both', 'lightning', 'effect', 'off'];
+  const TOUCH_MODES = ['both', 'lightning', 'effect', 'ripple', 'ripplefx', 'off'];
   function readTouch() {
     try { const v = localStorage.getItem(TOUCH_KEY); return TOUCH_MODES.includes(v) ? v : 'both'; }
     catch (e) { return 'both'; }
   }
   function writeTouch(v) { try { localStorage.setItem(TOUCH_KEY, v); } catch (e) {} }
+
+  // WHAT THE FINGER THROWS, separately from what the beat throws. Until 1.64.0 a finger fired
+  // whatever Bursts was set to, so choosing hearts for the music meant hearts under your finger
+  // too — one choice serving two jobs that have no reason to agree. 'beat' keeps them tied, and
+  // is the default, so nobody's app changes until they ask it to.
+  //
+  // The list is the six real effects plus the two Pocket owns. Lightning and fairy go through
+  // fireOne() exactly as they do on the beat: strike() and spawnFairy() keep their own gaps, so
+  // a finger asking for one every 80ms gets the same rate the music would have got.
+  const FTHROW_KEY = 'hive-pocket.fingerfx';
+  const FTHROW_MODES = ['beat', 'fireworks', 'confetti', 'embers', 'hearts', 'fountain', 'nova',
+                        'lightning', 'fairy', 'random'];
+  function readThrow() {
+    try { const v = localStorage.getItem(FTHROW_KEY); return FTHROW_MODES.includes(v) ? v : 'beat'; }
+    catch (e) { return 'beat'; }
+  }
+  function writeThrow(v) { try { localStorage.setItem(FTHROW_KEY, v); } catch (e) {} }
+  /** null when the finger should follow the music, which is what fireOne() wants for "no override". */
+  function throwEffect() { const v = readThrow(); return v === 'beat' ? null : v; }
 
   // FOUNTAIN, retuned. Its defaults make it the weakest of the six and the numbers say why, read
   // against its siblings: spread 0.55 is the narrowest of them all (every other effect is 1 or
@@ -2495,6 +2517,7 @@
     $('playerSel').value = readPlayer();
     $('driveSel').value = readDrive();
     $('touchSel').value = readTouch();
+    $('throwSel').value = readThrow();
     $('qualSel').value = readQualitySetting();
     paintAuto();
     $('reportText').value = readReport();
@@ -2610,7 +2633,7 @@
     add('look', currentLook());
     add('bursts', readBeatEffect());
     add('reacts to', readDrive());
-    add('finger', readTouch());
+    add('finger', readTouch() + ', throws ' + readThrow());
     add('background', readAmbient());
     add('colours', readPalette() + (readPalette() === 'random' ? ' (rolled ' + eqPaletteNow + ')' : ''));
     add('equalizer', readEqStyle() + (readEqStyle() === 'random' ? ' (rolled ' + eqShapeNow + ')' : ''));
@@ -2962,7 +2985,8 @@
   // these two lists and settings-smoke.js fails if a new one is in neither, which turns "did
   // you think about reset" from a thing to remember into a thing that stops the build.
   const RESET_KEYS = [VISUALS_KEY, MODES_KEY, AMBIENT_KEY, BEAT_KEY, SENS_KEY, PAL_KEY, EQ_KEY,
-    EQH_KEY, QUAL_KEY, PUNCH_KEY, DRIVE_KEY, TOUCH_KEY, PLAYER_KEY, HIDE_KEY, ADV_KEY, MIC_KEY];
+    EQH_KEY, QUAL_KEY, PUNCH_KEY, DRIVE_KEY, TOUCH_KEY, FTHROW_KEY, PLAYER_KEY, HIDE_KEY,
+    ADV_KEY, MIC_KEY];
   // KEPT, each for its own reason. The links, the folder and its track names are the person's
   // music rather than a setting. The report box is something they were part way through
   // writing. The tutorial, the reminders already seen and the dice's one nudge are history: an
@@ -3016,6 +3040,16 @@
       resetAll();
       const note = $('resetNote');
       if (note) note.textContent = 'Done — every setting is back to how it arrived.';
+    });
+  }
+
+  if ($('throwSel')) {
+    $('throwSel').addEventListener('change', () => {
+      const v = FTHROW_MODES.includes($('throwSel').value) ? $('throwSel').value : 'beat';
+      writeThrow(v);
+      // Deliberately NOT paintLook(). A Look sets the equalizer, the burst, the colours, the
+      // background and the sensitivity; what a finger throws is none of those, so choosing one
+      // must not drop the picker to Custom — the same rule Advanced follows.
     });
   }
 
@@ -3120,7 +3154,13 @@
     // A bolt still in the air when lightning is switched off would outlive the setting by a
     // fifth of a second and look like the switch failed. Wisps are untouched by it: this setting
     // is about what a FINGER does, and clearing them here took out ones the music had thrown.
-    if (v === 'effect' || v === 'off') clearStrikes();
+    //
+    // UNCONDITIONAL since ripples joined the list. Every move on this picker turns something off
+    // — bolts, rings, or both — and enumerating which is a condition that goes stale the next
+    // time an option is added. What it costs: switching from "Lightning and a burst" to
+    // "Lightning only" now also clears the bolt in the air, which it did not before. A fifth of
+    // a second, at the moment you were changing the setting anyway.
+    clearStrikes();
   });
 
   $('playerSel').addEventListener('change', () => {
@@ -3223,6 +3263,62 @@
                     turnedOn: 0 };
   let fbolts = [], boltRaf = 0, boltLast = 0, lastBoltAt = 0, lastFlashAt = 0;
 
+  // RIPPLES. A ring that leaves the finger and widens, the way a drop does on water. Pocket's
+  // own, on the same canvas as the bolts and the wisps, and for the same reason both of those
+  // are: the renderer's fire() knows six effects, this is not one of them, and a name it does
+  // not recognise falls back silently.
+  //
+  // THREE RINGS PER TOUCH, staggered ninety milliseconds apart. One ring reads as a circle;
+  // three read as a disturbance, which is the thing being drawn. Each is a little smaller and a
+  // little shorter than the one before it, so the set has a front and a back rather than looking
+  // like one ring drawn three times.
+  //
+  // No flash, ever, and nothing here is capped by the flash rules because there is nothing to
+  // cap: a ring is a thin stroke on a dark stage, not a full-screen fill.
+  const RIPPLE_GAP = 130;        // ms between ripples along one drag
+  const MAX_RIPPLES = 18;        // rings, not touches — six touches' worth
+  let ripples = [], lastRipple = 0;
+
+  function spawnRipple(nx, ny) {
+    if (!boltReady()) return;
+    const now = performance.now();
+    if (now - lastRipple < RIPPLE_GAP) return;
+    lastRipple = now;
+    sizeBolt();
+    if (!boltW || !boltH) return;
+    const rgb = boltRgb(0.35);
+    // THE SMALLER SIDE, not the larger, and screenshotting it is what settled that. On a phone
+    // with the player hidden the stage is about 386x1700, so a reach off the LONG side put the
+    // outer ring at 578px — wider than the screen, drawn as two arcs running off both edges and
+    // reading as a target laid over the app rather than as a ring in it. Off the short side it
+    // is a ring you can see all of, at every shape the stage takes.
+    const reach = Math.min(boltW, boltH) * 0.55;
+    for (let i = 0; i < 3; i++) {
+      ripples.push({ x: nx * boltW, y: ny * boltH, rgb,
+                     start: now + i * 90, dur: 880 - i * 110, reach: reach * (1 - i * 0.16) });
+    }
+    while (ripples.length > MAX_RIPPLES) ripples.shift();
+    if (!boltRaf) { boltLast = now; boltRaf = requestAnimationFrame(boltLoop); }
+  }
+
+  function drawRipples(now) {
+    for (const r of ripples) {
+      const t = (now - r.start) / r.dur;
+      if (t < 0 || t > 1) continue;            // still waiting its turn, or done
+      // Out fast and then slow, which is what a spreading ring does. A linear ring reads as a
+      // circle being scaled by a script, because that is exactly what it is.
+      const rad = r.reach * (1 - Math.pow(1 - t, 3));
+      const a = (1 - t) * (1 - t) * 0.9;
+      if (a <= 0.012 || rad <= 0.5) continue;
+      boltCtx.globalAlpha = a;
+      boltCtx.strokeStyle = 'rgb(' + r.rgb[0] + ',' + r.rgb[1] + ',' + r.rgb[2] + ')';
+      boltCtx.lineWidth = Math.max(0.8, 3.4 * (1 - t) + 0.5);
+      boltCtx.beginPath();
+      boltCtx.arc(r.x, r.y, rad, 0, Math.PI * 2);
+      boltCtx.stroke();
+    }
+  }
+
   const rand = (a, b) => a + Math.random() * (b - a);
 
   function boltReady() {
@@ -3249,12 +3345,18 @@
   // Mostly white with a cast of the palette, washed the same 75% of the way to white that the
   // renderer's own makeBolt() uses — a bolt that is fully 'fire' orange reads as a crack in the
   // screen rather than as light.
-  function boltRgb() {
+  //
+  // `wash` is how far toward white, and it is a parameter because a RIPPLE is not a bolt. At
+  // 0.75 a ring comes out very nearly white and the palette stops meaning anything — it reads as
+  // a grey target drawn over the app rather than as part of it. A bolt wants that wash because
+  // lightning IS white; a ring is water, and keeps most of its colour.
+  function boltRgb(wash) {
+    const w = typeof wash === 'number' ? wash : 0.75;
     try {
       const p = readPalette();
       const name = p === 'random' ? pick(CONCRETE) : p;
       const base = FxRender.sample(FxRender.stopsFor(name, null, null), 0.15);
-      return base.map((c) => Math.round(c + (255 - c) * 0.75));
+      return base.map((c) => Math.round(c + (255 - c) * w));
     } catch (e) { return [235, 240, 255]; }
   }
 
@@ -3318,12 +3420,18 @@
       fbolts[i].life -= dt;
       if (fbolts[i].life <= 0) fbolts.splice(i, 1);
     }
+    // Wall clock rather than a countdown, because a ring waits its turn before it starts and a
+    // life that ticks down while it is still waiting would kill the third one before it drew.
+    for (let i = ripples.length - 1; i >= 0; i--) {
+      if (now - ripples[i].start > ripples[i].dur) ripples.splice(i, 1);
+    }
     stepFairies(dt, now);
     boltCtx.setTransform(boltDpr, 0, 0, boltDpr, 0, 0);
     boltCtx.clearRect(0, 0, boltW, boltH);
-    // Cleared and stopped when BOTH are empty. Checking only the bolts left a live fairy with
-    // no loop to move it — the first thing that went wrong when this was added.
-    if (!fbolts.length && !fairies.length) return;
+    // Cleared and stopped when ALL of them are empty. Checking only the bolts left a live fairy
+    // with no loop to move it — the first thing that went wrong when this was added, and the
+    // same trap every new drawable on this layer walks into.
+    if (!fbolts.length && !fairies.length && !ripples.length) return;
     boltCtx.globalCompositeOperation = 'lighter';
     boltCtx.lineJoin = 'round';
     boltCtx.lineCap = 'round';
@@ -3353,6 +3461,7 @@
         boltCtx.fill();
       } catch (e) {}
     }
+    drawRipples(now);
     drawFairies();
     boltRaf = requestAnimationFrame(boltLoop);
   }
@@ -3565,6 +3674,7 @@
   function clearBolts() {
     fbolts.length = 0;
     fairies.length = 0;
+    ripples.length = 0;
     dropBolts();
   }
 
@@ -3572,6 +3682,9 @@
   // which is a burst effect and not a bolt. Using clearBolts() here wiped both.
   function clearStrikes() {
     fbolts.length = 0;
+    // Ripples go with the bolts, because both of them are THE FINGER'S OWN DRAWING and this is
+    // called when what a finger does has just changed. A wisp is a burst effect and stays.
+    ripples.length = 0;
     if (!fairies.length) dropBolts();
   }
 
@@ -3598,6 +3711,11 @@
   // path starts clean. Without the lift the joint segment is the one wrong-looking line on screen.
   function reflowBolts() {
     fbolts.length = 0;
+    // A RING IS DROPPED, like a bolt and unlike a wisp. A wisp is a position and a trail, both
+    // of which scale honestly; a ring is a position and a RADIUS, and a box whose axes changed
+    // by different amounts has no single radius to scale it to — the honest shapes are an
+    // ellipse it never was, or nothing. It lasts under a second, so nothing is dropped.
+    ripples.length = 0;
     // A hidden canvas measures 0x0 and sizeBolt() falls back to 300x150, which would become the
     // box every surviving wisp is scaled against. Nothing to reflow into, so nothing is measured.
     if (!boltReady() || boltCv.hidden) { if (!fairies.length) dropBolts(); return; }
@@ -3723,13 +3841,16 @@
     // The bolt keeps its own clock, deliberately: it is a slower, heavier thing than a burst and
     // one per burst would be a strobe. strike() enforces it, so calling this every move is safe.
     if (mode === 'both' || mode === 'lightning') strike(x, y);
-    if (mode === 'both' || mode === 'effect') {
+    // spawnRipple() keeps its own gap for the same reason strike() does — a ring is a slower,
+    // wider thing than a burst and one per burst would be a stack of circles.
+    if (mode === 'ripple' || mode === 'ripplefx') spawnRipple(x, y);
+    if (mode === 'both' || mode === 'effect' || mode === 'ripplefx') {
       const now = performance.now();
       if (now - lastPaint < PAINT_GAP) return;
       lastPaint = now;
       // x and y are 0-1 of the stage, which is what fire() expects — it multiplies by its own
       // canvas size, so this stays correct in full screen and after a rotation without conversion.
-      fireOne(x, y, PUNCH[readPunch()], readPalette());
+      fireOne(x, y, PUNCH[readPunch()], readPalette(), throwEffect());
     }
   }
 
@@ -3933,6 +4054,8 @@
     get drive() { return { name: readDrive(), on: DRIVE[readDrive()] }; },
     get driveAvg() { return { mid: midAvg, high: highAvg }; },
     get touch() { return readTouch(); },
+    get fingerThrow() { return readThrow(); },
+    get ripples() { return ripples.length; },
     diagnostics,
     reportBody,
     get tutorialStep() { return tutAt; },

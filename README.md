@@ -29,9 +29,11 @@ scope and opens a browser tab instead of the app.
 - **Plays audio from the device**, plus direct links to audio files that you save.
 - **Draws an equalizer and effects** from the audio it is playing — or, with the microphone,
   from whatever it can hear in the room, including music from another app entirely.
-- **Answers your finger.** Drag or press on the visuals and they paint. Two fingers send a pair
-  of wisps wandering off; two fingers again sends them away. (The app calls them *lights* — the
-  code and this README call them wisps, and they are the same thing.)
+- **Answers your finger.** Drag or press on the visuals and they paint — lightning, a burst,
+  ripples, or a combination, and the finger can throw a different effect from the one the music
+  is throwing. Two fingers send a pair of wisps wandering off; two fingers again sends them away.
+  (The app calls them *lights* — the code and this README call them wisps, and they are the same
+  thing.)
 - **Tap the visuals for full screen.** Tap again to come back.
 - **Lock-screen controls**, and it works offline.
 
@@ -90,6 +92,7 @@ It globs `*-smoke.js`, so a new suite is picked up without editing anything:
 
     advanced-smoke.js    the renderers' own knobs, and setConfig replacing rather than merging
     ambient-smoke.js     the effect picker, and whether a flashing mode strikes
+    finger-smoke.js      ripples, and what a finger throws when it is not the beat
     folder-smoke.js      the remembered folder, and the first touch that asks for it back
     resume-smoke.js      a play blocked by the phone, then resumed by a tap
     settings-smoke.js    reset, the equalizer's height, the dice hint, the tutorial revision
