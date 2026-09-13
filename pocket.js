@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.56.0-beta';
+  const VERSION = '1.57.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -849,6 +849,7 @@
     writeAdv(all);
     applyRenderers();
     paintAdvRow(which, path);
+    try { paintGroupValues(); } catch (e) {}
   }
   function resetAdv(which) {
     const all = readAdv();
@@ -856,6 +857,7 @@
     writeAdv(all);
     applyRenderers();
     buildAdvanced();
+    try { paintGroupValues(); } catch (e) {}
   }
   /** Fold the saved overrides onto a config the app has already built. */
   function withAdv(which, base) {
@@ -1097,6 +1099,8 @@
       b.textContent = micLive ? 'Stop listening' : 'Listen with the microphone';
       b.setAttribute('aria-pressed', micLive ? 'true' : 'false');
     }
+    // paintGroupValues is defined later in the file; micPaint can run before the sheet exists.
+    try { if (typeof paintGroupValues === 'function') paintGroupValues(); } catch (e) {}
     const c = $('micAuto');
     if (c) c.checked = readMicAuto();
     // Say it on the main screen too. A microphone that is open and unmentioned is the kind of
@@ -2188,8 +2192,13 @@
     if (grp) setHidden(grp, !canRemember());
     const rec = $('folderReconnect');
     if (rec) setHidden(rec, !folderHandle);
+    // HIDDEN, not disabled, when there is nothing to forget. A red "Forget the folder" under
+    // "No folder remembered yet" reads as a warning about something that has not happened, and
+    // a disabled danger button is a danger button someone squints at.
     const forget = $('folderForget');
-    if (forget) forget.disabled = !folderHandle;
+    if (forget) { forget.disabled = !folderHandle; setHidden(forget, !folderHandle); }
+    const remembered = $('folderRemembered');
+    if (remembered) setHidden(remembered, !folderHandle);
     const name = $('folderName');
     if (name) {
       name.textContent = folderHandle
@@ -2279,15 +2288,61 @@
     const n = readLinks().length;
     $('linkCount').textContent = n ? (n + ' saved. They come back every time you open the app.') : 'None saved.';
     $('forgetLinks').disabled = !n;
+    setHidden($('forgetLinks'), !n);       // same rule as Forget the folder: nothing to forget, no red button
     $('aboutVer').textContent = 'beta ' + VERSION.replace(/-beta$/, '');
     buildAdvanced();
+    paintGroupValues();
+  }
+
+  // A CLOSED GROUP SAYS ITS VALUE. The sheet was rebuilt on 2026-09-13 from loose headings and
+  // 2,800 words into eight groups, and a row that only says "Effects" makes you open it to learn
+  // anything. Each summary carries the one value someone would open it to check. Read from the
+  // same sources the controls paint from, so they cannot disagree with the control underneath.
+  function paintGroupValues() {
+    const text = (id, v) => { const el = $(id); if (el) el.textContent = v || ''; };
+    // The option's LABEL, not its value: "Deep freeze" rather than "freeze". Falls back to the
+    // value when a select has no options to read, which a bare element in a test stub is.
+    const sel = (id) => {
+      const s = $(id); if (!s) return '';
+      const o = s.options && s.selectedIndex >= 0 ? s.options[s.selectedIndex] : null;
+      const raw = o ? o.textContent : String(s.value || '');
+      return raw.split(' — ')[0].split(' (')[0].trim();
+    };
+    let music = 'Nothing yet';
+    const tracks = queue.filter((t) => !t.link && !t.dead).length;
+    if (micLive) music = 'Listening';
+    else if (tracks) music = tracks + (tracks === 1 ? ' track' : ' tracks') + (queue.some((t) => t.pending) ? ', locked' : '');
+    else if (readLinks().length) music = readLinks().length + ' saved link' + (readLinks().length === 1 ? '' : 's');
+    text('valMusic', music);
+    const look = currentLook();
+    text('valLook', look === 'custom' ? 'Custom' : sel('lookSel'));
+    text('valEq', sel('eqSel'));
+    text('valFx', sel('beatSel'));
+    text('valScreen', sel('playerSel') + ' · ' + (readQualitySetting() === 'auto' ? 'Auto' : sel('qualSel')));
+    const adv = readAdv();
+    let moved = 0;
+    for (const [which, specs] of [['eq', ADV_EQ], ['fx', ADV_FX]]) {
+      for (const spec of specs) {
+        const v = dig(adv[which] || {}, spec.k);
+        if (v !== undefined && String(v) !== String(dig(advDefaults(which), spec.k))) moved++;
+      }
+    }
+    text('valAdv', moved ? moved + ' changed' : 'Defaults');
   }
   function openSheet() {
+    // Always from the top. The sheet kept whatever scroll position it was last left at - after
+    // the tutorial's microphone step that was the bottom - so the first thing seen on opening
+    // was the install note and Forget all saved links, the least important things in it.
+    const sh = $('sheet'); if (sh) sh.scrollTop = 0;
     paintSheet();
     if (!$('tut').hidden) requestAnimationFrame(tutPlace);
     setHidden($('sheetBack'), false); setHidden($('sheet'), false);
     $('menuBtn').setAttribute('aria-expanded', 'true');
-    $('sheetClose').focus();
+    // preventScroll, because THIS was what kept opening the sheet at the bottom: focusing Done
+    // scrolled it into view, and Done is the last thing in the sheet. Focus still lands there
+    // for the keyboard; the eye lands at the top.
+    try { $('sheetClose').focus({ preventScroll: true }); } catch (e) { $('sheetClose').focus(); }
+    const sh2 = $('sheet'); if (sh2) sh2.scrollTop = 0;
   }
   function closeSheet() {
     setHidden($('sheetBack'), true); setHidden($('sheet'), true);
@@ -3442,6 +3497,11 @@
 
   $('fxBtn').addEventListener('click', () => applyVisuals(fxShown() ? 'eq' : 'both'));
   $('visualsSel').addEventListener('change', () => applyVisuals($('visualsSel').value));
+  // One delegated listener rather than a call in each of the twelve handlers above. It runs
+  // after the control's own handler (bubbling reaches the sheet last), so it reads the value
+  // the handler has just written. The microphone and the advanced rows repaint from their own
+  // paths, since neither arrives here as a change on a select.
+  $('sheet').addEventListener('change', () => { try { paintGroupValues(); } catch (e) {} });
 
   if ('mediaSession' in navigator) {
     const set = (a, fn) => { try { navigator.mediaSession.setActionHandler(a, fn); } catch (e) {} };

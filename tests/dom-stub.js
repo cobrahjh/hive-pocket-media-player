@@ -70,6 +70,12 @@ const SVG_IDS = new Set();
  * stub where both start shown reports "both drawn" on a healthy build.
  */
 const HIDDEN_IDS = new Set();
+/**
+ * Each <select>'s options, read from the markup. paintGroupValues() reads the selected option's
+ * LABEL to put "Deep freeze" in a summary rather than "freeze"; a stub select with no options
+ * makes that path either throw or fall back to the raw value, and neither is what the page does.
+ */
+const SELECT_OPTIONS = new Map();
 (() => {
   let html;
   try { html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8'); }
@@ -82,6 +88,15 @@ const HIDDEN_IDS = new Set();
     const id = /\bid="([^"]+)"/.exec(attrs);
     if (!id) continue;
     if (name === 'svg') SVG_IDS.add(id[1]);
+    if (name === 'select') {
+      const end = html.indexOf('</select>', m.index);
+      const body = end > 0 ? html.slice(m.index, end) : '';
+      const opts = [];
+      const opt = /<option\s+value="([^"]*)"[^>]*>([^<]*)<\/option>/g;
+      let om;
+      while ((om = opt.exec(body))) opts.push({ value: om[1], textContent: om[2].replace(/\s+/g, ' ').trim() });
+      SELECT_OPTIONS.set(id[1], opts);
+    }
     // NOT aria-hidden. \b treats the dash as a boundary, so a plain \bhidden matches inside it
     // and seeded the play triangle - which carries aria-hidden and no hidden - as starting
     // hidden, reporting "both glyphs drawn" on a healthy build.
@@ -185,6 +200,15 @@ function el(id) {
     set(v) { e._text = String(v === null || v === undefined ? '' : v); if (e._text === '') e.children.length = 0; },
   });
   if (HIDDEN_IDS.has(id)) e.attrs.hidden = '';
+  if (SELECT_OPTIONS.has(id)) {
+    e.tagName = 'SELECT';
+    e.options = SELECT_OPTIONS.get(id).map((o) => Object.assign({}, o));
+    // selectedIndex follows `value` the way the DOM's does; an unknown value selects nothing.
+    Object.defineProperty(e, 'selectedIndex', {
+      get() { return e.options.findIndex((o) => o.value === e.value); },
+    });
+    if (e.options.length && e.value === '') e.value = e.options[0].value;
+  }
   if (isSvg) {
     e.hidden = 'hidden' in e.attrs;    // a dead property, seeded to match the markup once
   } else {

@@ -641,3 +641,29 @@ body.has-pending .reconnect-btn { border-style: solid; }
 .adv-in { width: 100%; min-height: 34px; accent-color: var(--hive); }
 select.adv-in { min-height: 38px; font-size: 0.85rem; }
 input[type="checkbox"].adv-in { width: 22px; height: 22px; justify-self: start; }
+
+
+/* ── the sheet, rebuilt 2026-09-13 ─────────────────────────────────────────────────────────
+   Every section is a group now, and a closed group SAYS ITS VALUE. A row that reads "Look" tells
+   you nothing; "Look  Hive" tells you whether to open it. The readout is pushed right, dimmed,
+   and clipped to one line so a long value cannot wrap the summary onto two. */
+.grp > summary { justify-content: flex-start; }
+.grp-val {
+  margin-left: auto; padding-left: 0.6rem;
+  font-size: 0.74rem; font-weight: 500; letter-spacing: 0;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 55%;
+}
+.grp[open] > summary .grp-val { color: var(--hive); }
+/* Groups read as cards rather than as a run of headings, and a nested group (Help holds How it
+   works and Report a problem) is indented so its own chevron lines up with its parent's text. */
+.grp { border: 1px solid var(--line); border-radius: var(--radius); padding: 0 0.7rem 0.1rem; }
+.grp[open] { padding-bottom: 0.8rem; }
+.grp .grp { border: 0; border-top: 1px solid var(--line); border-radius: 0; padding: 0; margin: 0.6rem 0 0; }
+.grp .grp[open] { padding-bottom: 0.2rem; }
+.grp > .set, .grp > ul, .grp > p, .grp > .adv-box, .grp > .adv-h, .grp > .sheet-btn { margin-left: 0; }
+/* Within a group the old rule indented content by 1.1rem to sit under a chevron; inside a card
+   the border already frames it, and the indent only narrowed every select at phone width. */
+.grp > .set, .grp > ul, .grp > p { padding-left: 0; }
+.grp > .set + .set, .grp > .set + ul, .grp > .set + p, .grp > .set + details { margin-top: 0.9rem; }
+.grp > .adv-h { margin-top: 0.9rem; }

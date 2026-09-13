@@ -226,25 +226,64 @@
     <div class="sheet-grip" aria-hidden="true"></div>
     <h2 id="sheetTitle">Settings</h2>
 
-    <!-- ORDER IS DELIBERATE, and it is not the order these arrived in. Reviewed 2026-09-10 after
-         the sheet reached eleven blocks and 2.5 screens: the defect was never the length - eleven
-         controls is a legitimate eleven controls - it was that finding anything meant reading
-         everything. So: grouped, Look first because it sets four of the others, and those four
-         directly beneath it instead of scattered behind unrelated blocks.
+    <!-- REBUILT 2026-09-13. The previous sheet was eleven and a half screens tall with everything
+         open, 41 notes and 2,800 words: a control panel that had become an essay, with two loose
+         headings ("Picture", "Sound", "App") mixed with collapsible groups, and Colours and On the
+         stage filed under Effects although both change every layer.
 
-         The equalizer and the effects are <details> GROUPS ON PURPOSE. They hold one or two
-         controls each today and both renderers accept far more - fill, mirror, caps, bands, gain
-         and motion on one side; intensity, dynamics, tempo sync and per-effect tuning on the
-         other - so the submenu those settings will live in already exists and they can be dropped
-         straight in. Left OPEN for now: closing them today would hide the sensitivity control,
-         which is the one that decides whether bursts fire at all from a microphone. Flip the
-         attribute when there is enough inside to be worth a tap. -->
+         THE RULE NOW: every section is the same kind of thing - a group with a summary that shows
+         its current value - and every control gets AT MOST ONE SHORT LINE at the point of use.
+         The long explanations were not deleted; they moved to How it works, keyed by the setting
+         they explain, where someone who wants the reasoning goes looking for it. The flashing
+         warnings stay on the controls that flash, because that is a safety note and not an
+         explanation.
 
-    <h3 class="sheet-sec">Picture</h3>
+         Order is by how often a thumb reaches for it: what feeds the app, what it looks like,
+         then the two renderers, then the screen, then the deep and the rare. Music is first
+         because nothing else here means anything without sound.
 
-    <div class="set">
-      <label class="set-lab" for="lookSel">Look</label>
-      <select id="lookSel" title="Sets the burst, the colours, the equalizer and the background together">
+         Every id from before is still here - pocket.js paints into them and the tutorial rings
+         them by id - which is checked by tests/sheet-smoke.js against the ids pocket.js uses. -->
+
+    <details class="grp" open>
+      <summary>Music <span class="grp-val" id="valMusic"></span></summary>
+      <div class="set">
+        <button class="sheet-btn" id="micBtn" type="button" aria-pressed="false"
+                title="Draw the visuals from what this phone can hear">Listen with the microphone</button>
+        <p class="set-note" id="micNote">Not listening.</p>
+        <label class="mic-auto" for="micAuto">
+          <input type="checkbox" id="micAuto">
+          <span>Start listening when the app opens<small>Comes back on its own next time, with no tap. Only the microphone can do this.</small></span>
+        </label>
+        <p class="set-note">Hears anything in the room — another app, a speaker, a radio. Nothing
+          is recorded and nothing leaves the phone.</p>
+      </div>
+      <div class="set" id="folderGrp" hidden>
+        <span class="set-lab">Your music folder</span>
+        <p class="set-note" id="folderName">No folder remembered yet.</p>
+        <p class="set-note" id="folderNote" hidden></p>
+        <button class="sheet-btn" id="folderPick" type="button"
+                title="Choose a folder of music — it is remembered, and comes back on a touch">Choose a folder</button>
+        <button class="sheet-btn ghost" id="folderReconnect" type="button" hidden
+                style="margin-top:0.5rem"
+                title="Bring the remembered folder back — touching anything does this too">Reconnect it</button>
+        <button class="sheet-btn danger" id="folderForget" type="button"
+                style="margin-top:0.5rem" title="Stop remembering this folder">Forget the folder</button>
+        <p class="set-note" id="folderRemembered" hidden>After a cold start the first thing you
+          touch brings it back — up to 500 tracks, three folders deep.</p>
+      </div>
+      <div class="set">
+        <span class="set-lab">Saved links</span>
+        <p class="set-note" id="linkCount">None saved.</p>
+        <button class="sheet-btn danger" id="forgetLinks" title="Remove every saved link" type="button">Forget all saved links</button>
+      </div>
+    </details>
+
+    <details class="grp" open>
+      <summary>Look <span class="grp-val" id="valLook"></span></summary>
+      <div class="set">
+        <label class="set-lab" for="lookSel">Look</label>
+        <select id="lookSel" title="Sets the burst, the colours, the equalizer and the background together">
         <option value="hive">Hive — orange fireworks under stars</option>
         <option value="bonfire">Bonfire — embers glowing up</option>
         <option value="freeze">Deep freeze — cold novas in snow</option>
@@ -254,17 +293,34 @@
         <option value="storm">Storm — fireworks in lightning (flashes)</option>
         <option value="custom">Custom</option>
       </select>
-      <p class="set-note">One tap sets everything below it. Move any of them by hand and this says
-        Custom. Storm flashes the screen; if that bothers you, or you are photosensitive, leave it
-        alone.</p>
-      <button class="sheet-btn ghost" id="surpriseBtn" type="button"
-              title="Roll the equalizer, the bursts, the colours, the background and the sensitivity">Surprise me</button>
-      <p class="set-note">Rolls all five at once. It never rolls the two flashing backgrounds —
-        those are yours to choose by name, not something a button should spring on you.</p>
-    </div>
+        <p class="set-note">One tap sets everything below. Storm flashes.</p>
+        <button class="sheet-btn ghost" id="surpriseBtn" type="button"
+                title="Roll the equalizer, the bursts, the colours, the background and the sensitivity">Surprise me</button>
+      </div>
+      <div class="set">
+        <label class="set-lab" for="palSel">Colours</label>
+        <select id="palSel" title="The palette for the bars, the bursts and the background">
+        <option value="hive">Hive orange</option>
+        <option value="fire">Fire</option>
+        <option value="ice">Ice</option>
+        <option value="vapor">Vapor</option>
+        <option value="mono">Mono</option>
+        <option value="random">Random</option>
+      </select>
+      </div>
+      <div class="set">
+        <label class="set-lab" for="visualsSel">On the stage</label>
+        <select id="visualsSel" title="What is drawn on the stage">
+        <option value="both">Effects over the equalizer</option>
+        <option value="fx">Effects only</option>
+        <option value="eq">Equalizer only</option>
+      </select>
+        <p class="set-note">The star on the player is this same switch.</p>
+      </div>
+    </details>
 
-    <details class="grp" open>
-      <summary>Equalizer</summary>
+    <details class="grp">
+      <summary>Equalizer <span class="grp-val" id="valEq"></span></summary>
       <div class="set">
         <label class="set-lab" for="eqSel">Style</label>
         <select id="eqSel" title="How the equalizer draws the sound">
@@ -277,13 +333,12 @@
           <option value="radial">Radial</option>
           <option value="random">Random — pick one for me</option>
         </select>
-        <p class="set-note">Seven ways to draw the same sound. Random picks one and holds it — it
-          changes when you change something else, rather than flickering between seven.</p>
+        <p class="set-note">Seven ways to draw the same sound. More in Advanced.</p>
       </div>
     </details>
 
-    <details class="grp" open>
-      <summary>Effects</summary>
+    <details class="grp">
+      <summary>Effects <span class="grp-val" id="valFx"></span></summary>
       <div class="set">
         <label class="set-lab" for="beatSel">Bursts</label>
         <select id="beatSel" title="The burst the visuals throw when the music hits">
@@ -297,23 +352,10 @@
           <option value="fairy">Fairy</option>
           <option value="random">Random — a different one each burst</option>
         </select>
-        <p class="set-note">Thrown over the background, and used by every source below —
-          the beat, the mids, the highs and your finger.</p>
-        <p class="set-note"><b>Fairy</b> sends a wisp of light drifting across the stage with a
-          long tail behind it, throwing a different one of the six above every time it flashes —
-          so you cannot tell what the next one will be. Its bursts are deliberately small: a wisp
-          throwing full-size ones several times a second is not a wisp, it is the effects running
-          four times as fast. Two at a time at most, and the tail fades out behind it rather than
-          ending on an edge. Random and Surprise me can land on it. Two fingers anywhere on the
-          stage sends a pair out that never expire — two fingers again sends them away.</p>
-        <p class="set-note"><b>Lightning</b> strikes instead of bursting: a bolt down the screen
-          on the beat, and on the mids and highs if those are on. It flashes the screen dimly as
-          each bolt lands — if flashing bothers you, or you are photosensitive, leave it alone.
-          The flash is capped lower than the storm background's, cannot land more than about twice
-          a second, and is dropped entirely when this phone asks apps to reduce motion. Random and
-          Surprise me never choose it: flashing happens when you name it, not when dice do.</p>
+        <p class="set-note">Thrown on the beat and by your finger. <b>Fairy</b> is a wisp with a
+          tail that throws a different burst each flash. <b>Lightning</b> flashes the screen — if
+          that bothers you, or you are photosensitive, leave it alone.</p>
       </div>
-
       <div class="set">
         <label class="set-lab" for="punchSel">Size</label>
         <select id="punchSel" title="How big a burst is when it lands">
@@ -322,10 +364,7 @@
           <option value="bold">Bold</option>
           <option value="huge">Huge</option>
         </select>
-        <p class="set-note">Scales every burst. On Battery saver the particle budget will clip the
-          biggest ones — that is the cap doing its job, not the setting failing.</p>
       </div>
-
       <div class="set">
         <label class="set-lab" for="sensSel">Sensitivity</label>
         <select id="sensSel" title="How far above the running average a moment has to be to count as a hit">
@@ -333,11 +372,18 @@
           <option value="room">Middling</option>
           <option value="strict">Strict — for a file playing in this app</option>
         </select>
-        <p class="set-note">A room smears the sharp edges a file keeps, so what works for a track
-          playing here will never fire from across the room. The cost of Easy is honesty: a burst
-          stops meaning a distinct beat was hit.</p>
+        <p class="set-note">Easy for a room, Strict for a file playing here.</p>
       </div>
-
+      <div class="set">
+        <label class="set-lab" for="driveSel">Reacts to</label>
+        <select id="driveSel" title="Which parts of the sound are allowed to throw a burst">
+          <option value="bass">Bass only</option>
+          <option value="mid">Bass and mids</option>
+          <option value="high">Bass and highs</option>
+          <option value="full">Full spectrum — bass, mids and highs</option>
+        </select>
+        <p class="set-note">Bass is the kick. Mids land mid-screen, highs near the top.</p>
+      </div>
       <div class="set">
         <label class="set-lab" for="ambientSel">Background</label>
         <select id="ambientSel" title="The weather that always draws, behind the beat">
@@ -356,36 +402,8 @@
           <option value="storm">Storm (flashes)</option>
           <option value="lightning">Lightning (flashes)</option>
         </select>
-        <p class="set-note">Always drawing, behind the bursts that land on the beat. Storm and
-          lightning flash the screen — if flashing bothers you, or you are photosensitive, leave
-          those two alone. Pick one anyway and the flash stays dim, strikes stay at least 0.8
-          seconds apart, and no setting can turn either of those up.</p>
-        <p class="set-note" id="motionNote" hidden>This phone asks apps to reduce motion. The two
-          flashing effects still flash if you choose one.</p>
+        <p class="set-note">Always drawing, behind the bursts. Storm and lightning flash.</p>
       </div>
-
-      <div class="set">
-        <label class="set-lab" for="driveSel">Reacts to</label>
-        <select id="driveSel" title="Which parts of the sound are allowed to throw a burst">
-          <option value="bass">Bass only</option>
-          <option value="mid">Bass and mids</option>
-          <option value="high">Bass and highs</option>
-          <option value="full">Full spectrum — bass, mids and highs</option>
-        </select>
-        <p class="set-note">Every burst until now came from the lowest four of sixty-four bands:
-          the kick drum, and nothing else. Mids are voices, snares and guitars, and land
-          mid-screen; highs are hats and cymbals, and land near the top, so you can see which
-          part of the track spoke. Nothing is hidden by turning this up — but bursts get more
-          frequent, and on Battery saver the particle budget is reached sooner, so each one
-          carries fewer pieces.</p>
-        <p class="set-note">Mids are the busy layer, so they now have to be proportionally
-          <em>dominant</em> rather than merely loud — a drum hit raises everything at once and no
-          longer counts, while a vocal or a guitar line raises mids alone and does. The cost is
-          that on a track which is mostly percussion the mid layer goes quiet, and that is
-          correct rather than broken. <b>Bass and highs</b> drops them entirely and keeps the
-          sparkle.</p>
-      </div>
-
       <div class="set">
         <label class="set-lab" for="touchSel">Your finger</label>
         <select id="touchSel" title="What a drag or a press on the visuals draws">
@@ -394,189 +412,64 @@
           <option value="effect">A burst only</option>
           <option value="off">Nothing</option>
         </select>
-        <p class="set-note">Drag or press on the visuals. Lightning strikes down to your finger
-          and flashes the screen dimly as it lands — if flashing bothers you, or you are
-          photosensitive, choose <em>A burst only</em>. The flash is capped lower than the storm
-          effect's, cannot land more than about twice a second however fast you move, and is
-          dropped entirely when this phone asks apps to reduce motion. A quick tap is still full
-          screen; <em>Nothing</em> stops the drawing, not the gesture.</p>
+        <p class="set-note">A drag or a press on the visuals. Two fingers send wisps out; two
+          fingers again sends them away.</p>
       </div>
     </details>
 
-    <div class="set">
-      <label class="set-lab" for="palSel">Colours</label>
-      <select id="palSel" title="The palette for the bars, the bursts and the background">
-        <option value="hive">Hive orange</option>
-        <option value="fire">Fire</option>
-        <option value="ice">Ice</option>
-        <option value="vapor">Vapor</option>
-        <option value="mono">Mono</option>
-        <option value="random">Random</option>
+    <details class="grp">
+      <summary>Screen <span class="grp-val" id="valScreen"></span></summary>
+      <div class="set">
+        <label class="set-lab" for="playerSel">Player</label>
+        <select id="playerSel" title="How much of the player is on screen">
+        <option value="full">Everything</option>
+        <option value="mini">Minimized — controls and the track name</option>
+        <option value="hidden">Hidden — visuals only</option>
       </select>
-      <p class="set-note">Colours every layer at once. Random rolls the effects; the equalizer
-        takes one real colour from the set, since it cannot roll.</p>
-    </div>
-
-    <div class="set">
-      <label class="set-lab" for="visualsSel">On the stage</label>
-      <select id="visualsSel" title="What is drawn on the stage">
-        <option value="both">Effects over the equalizer</option>
-        <option value="fx">Effects only</option>
-        <option value="eq">Equalizer only</option>
-      </select>
-      <p class="set-note">The star on the transport switches the effects half on and off, and lands
-        back here — the two are the same setting.</p>
-    </div>
-
-    <h3 class="sheet-sec">Sound</h3>
-
-    <div class="set">
-      <span class="set-lab">Microphone</span>
-      <button class="sheet-btn" id="micBtn" type="button" aria-pressed="false"
-              title="Draw the visuals from what this phone can hear">Listen with the microphone</button>
-      <p class="set-note" id="micNote">Not listening.</p>
-      <label class="mic-auto" for="micAuto">
-        <input type="checkbox" id="micAuto">
-        <span>Start listening when the app opens<small>Comes back on its own next time, with no tap. Only the microphone can do this.</small></span>
-      </label>
-      <p class="set-note">The one source that can see sound this app does not own — another app's
-        music, a speaker in the room, a stream. Nothing is recorded and nothing leaves the phone;
-        the sound is measured and drawn, never saved and never sent.</p>
-      <p class="set-note">While it is listening the screen is kept awake, so a phone propped against
-        something does not go dark mid-track. Measured cost: about 12% of a battery an hour, screen
-        and all.</p>
-    </div>
-
-    <h3 class="sheet-sec">App</h3>
-
-    <div class="set">
-      <label class="set-lab" for="qualSel">Performance</label>
-      <select id="qualSel" title="How hard the visuals work, and what they cost the battery">
+      </div>
+      <div class="set">
+        <label class="set-lab" for="qualSel">Performance</label>
+        <select id="qualSel" title="How hard the visuals work, and what they cost the battery">
         <option value="auto">Automatic — matches this phone</option>
         <option value="full">Full</option>
         <option value="balanced">Balanced</option>
         <option value="saver">Battery saver</option>
       </select>
-      <p class="set-note" id="autoNote">—</p>
-      <p class="set-note">On <b>Automatic</b> the app starts from what this phone says about
-        itself, then watches its own frame rate while it draws and moves between the three
-        settings below. It steps down within about two seconds of stuttering and back up only
-        after several seconds of running clean, so it settles rather than flickering between
-        two. The line above always says which one is actually running — Automatic never means
-        "Full, probably".</p>
-      <p class="set-note">Bursts throw fewer pieces and the background carries fewer as this comes
-        down, and Battery saver also redraws the equalizer 24 times a second instead of 60 —
-        visibly less fluid on a fast track. Nothing is removed and no effect becomes unavailable.
-        Full costs about 12% of a battery an hour with the microphone on; what the other two save
-        against that has not been measured.</p>
-    </div>
-
-    <div class="set">
-      <label class="set-lab" for="playerSel">Player</label>
-      <select id="playerSel" title="How much of the player is on screen">
-        <option value="full">Everything</option>
-        <option value="mini">Minimized — controls and the track name</option>
-        <option value="hidden">Hidden — visuals only</option>
-      </select>
-      <p class="set-note"><b>Minimized</b> keeps what you touch and drops what you only read: the
-        transport row and the track name stay, the queue and the scrubber go, and the visuals get
-        the space. The chevron on the player does the same thing in one tap.</p>
-      <p class="set-note"><b>Hidden</b> leaves the visuals and this menu. Your queue, saved links
-        and controls are untouched and come straight back. Anything playing stops, since there
-        would be no way to stop it.</p>
-    </div>
-
-    <div class="set" id="folderGrp" hidden>
-      <span class="set-lab">Your music folder</span>
-      <p class="set-note" id="folderName">No folder remembered yet.</p>
-      <p class="set-note" id="folderNote" hidden></p>
-      <button class="sheet-btn" id="folderPick" type="button"
-              title="Choose a folder of music — it is remembered, and comes back on a touch">Choose a folder</button>
-      <button class="sheet-btn ghost" id="folderReconnect" type="button" hidden
-              style="margin-top:0.5rem"
-              title="Bring the remembered folder back — touching anything does this too">Reconnect it</button>
-      <button class="sheet-btn danger" id="folderForget" type="button"
-              style="margin-top:0.5rem" title="Stop remembering this folder">Forget the folder</button>
-      <p class="set-note">This browser can remember a folder, so your music comes back without
-        picking it again. It cannot reopen it silently — a page is never allowed to reach your
-        files unasked — so the <em>first thing you touch</em> in the app brings it back, whatever
-        that touch was for. You do not have to find a button. It reads up to 500 tracks and three folders deep, and says so when a
-        folder is bigger than that.</p>
-      <p class="set-note"><b>If it keeps asking:</b> Chrome's permission prompt sometimes offers
-        three answers, and the middle one, <em>Allow on every visit</em>, is the one meant to
-        stick — the default covers only that visit. Chrome also documents that an installed app
-        should keep the permission with no prompt at all. On some phones it asks every time
-        regardless; that is the browser's decision and nothing in this app can override it. If
-        yours keeps asking, a bug report from below now carries exactly what the browser
-        answered, which is the only way to tell the two apart.</p>
-      <div id="installRow" hidden>
-        <p class="set-note">Installing this app to your home screen opens it without the browser
-          bars, which leaves more room for the visuals. It does <b>not</b> stop the asking:
-          Chrome documents that an installed app keeps folder permission with no prompt, and on
-          a real Android phone — installed, storage persisted, Chrome 152 — it asked anyway. The
-          honest version is one tap after a cold start, wherever you happen to touch first.</p>
-        <button class="sheet-btn" id="installBtn" type="button"
-                title="Add Hive Pocket to your home screen">Add to home screen</button>
+        <p class="set-note" id="autoNote"></p>
+        <p class="set-note" id="motionNote" hidden>This phone asks apps to reduce motion, so the
+          flashing backgrounds and lightning are dropped whatever is chosen.</p>
       </div>
-      <!-- SHOWN WHEN THE BUTTON ABOVE IS NOT. Chrome only fires beforeinstallprompt once it has
-           decided the site qualifies, which can take a visit or two, and iOS never fires it at
-           all — so the button is absent exactly when someone is most likely to be looking for
-           it. The manual route always works and is two taps. -->
-      <div id="installHow" hidden>
-        <p class="set-note"><b>To put this on your home screen</b>, open your browser's own menu
-          — the three dots in Chrome, the share button in Safari — and choose <b>Install app</b>
-          or <b>Add to Home screen</b>. A button appears here instead once Chrome offers one,
-          which can take a visit or two.</p>
-      </div>
-    </div>
-
-    <div class="set">
-      <span class="set-lab">Saved links</span>
-      <p class="set-note" id="linkCount">None saved.</p>
-      <p class="set-note">Any YouTube links saved by an older version are kept but cannot play.
-        This removes those too.</p>
-      <button class="sheet-btn danger" id="forgetLinks" title="Remove every saved link" type="button">Forget all saved links</button>
-    </div>
-
-    <div class="set">
-      <span class="set-lab">Tutorial</span>
-      <p class="set-note">A quick walk through the stage, the microphone, your own music and the
-        looks. It runs once by itself the first time; this is how to see it again.</p>
-      <button class="sheet-btn ghost" id="tutAgain" type="button"
-              title="Walk through the app again">Show me around</button>
-    </div>
-
-    <details class="grp" id="reportGrp">
-      <summary>Report a problem</summary>
-      <div class="set">
-        <label class="set-lab" for="reportText">What happened?</label>
-        <textarea id="reportText" rows="4" placeholder="What you did, what you expected, what happened instead."
-                  aria-describedby="reportNote"></textarea>
-        <p class="set-note" id="reportNote">Kept on this phone as you type, so a half-written
-          note survives closing the menu.</p>
-      </div>
-      <div class="set">
-        <button class="sheet-btn" id="reportSend" type="button"
-                title="Open your mail app with the report and the details below already filled in">Send by email</button>
-        <button class="sheet-btn ghost" id="reportCopy" type="button"
-                title="Put the report and the details below on the clipboard"
-                style="margin-top:0.5rem">Copy instead</button>
-        <p class="set-note" id="reportSaid" hidden></p>
-        <p class="set-note">Email opens whatever mail app this phone uses, with everything already
-          written — nothing is sent until you press send there, and this app still never talks to
-          a server itself. Copy is for a phone with no mail app set up.</p>
-      </div>
-      <details class="grp" id="diagGrp">
-        <summary>Exactly what gets attached</summary>
-        <p class="set-note">Shown in full, never a hidden blob. The names of your music, your
-          saved links and anything you are playing are <b>not</b> in here and never will be.</p>
-        <pre class="diag" id="reportDiag">—</pre>
-      </details>
     </details>
 
+    <!-- CLOSED, and after the everyday groups. Nothing here is needed to use the app, nothing
+         here is in a Look, and every control starts at the renderer's own default - so opening
+         this group changes nothing until something is moved. Rows are built by pocket.js from
+         the renderers' exported tables rather than written out here. -->
     <details class="grp">
-      <summary>How it works</summary>
-      <ul class="help">
+      <summary>Advanced <span class="grp-val" id="valAdv"></span></summary>
+      <p class="set-note">The rest of what the renderers can do. Nothing here is in a Look, so a
+        Look will not undo it and it will not drop the Look to Custom. A changed value is marked;
+        a label says when a knob only shows in some styles.</p>
+      <h3 class="adv-h">Equalizer</h3>
+      <div id="advEq" class="adv-box"></div>
+      <button class="sheet-btn ghost" id="advEqReset" type="button"
+              title="Put every equalizer value back to the renderer's own default">Reset the equalizer</button>
+      <h3 class="adv-h">Effects</h3>
+      <div id="advFx" class="adv-box"></div>
+      <button class="sheet-btn ghost" id="advFxReset" type="button"
+              title="Put every effects value back to the renderer's own default">Reset the effects</button>
+    </details>
+
+    <details class="grp" id="helpGrp">
+      <summary>Help</summary>
+      <div class="set">
+        <button class="sheet-btn ghost" id="tutAgain" type="button"
+                title="Walk through the app again">Show me around</button>
+        <p class="set-note">The seven-step tour. It ran once by itself the first time.</p>
+      </div>
+      <details class="grp" id="howGrp">
+        <summary>How it works</summary>
+        <ul class="help">
         <li><b>Microphone</b> — in this menu. It draws from whatever the phone can hear, which is
           the only way to get visuals from music this app cannot read — YouTube, Spotify, another
           phone across the room, a radio. Play it
@@ -624,58 +517,96 @@
           is attached before you send it.</li>
         <li><b>Everything works offline now</b>, including the next time you open the app. Nothing
           in this app reaches the network at all.</li>
+      
+        <li><b>Look</b> — one tap sets the equalizer, the burst, the colours, the background and
+          the sensitivity together. Move any of them by hand and the picker says Custom. Storm
+          flashes the screen; if that bothers you, or you are photosensitive, leave it alone.
+          Surprise me rolls all five but never the two flashing backgrounds — those are yours to
+          choose by name, not something a button should spring on you.</li>
+        <li><b>Random equalizer</b> picks one style and holds it — it changes when you change
+          something else, rather than flickering between seven.</li>
+        <li><b>Size</b> scales every burst. On Battery saver the particle budget clips the
+          biggest ones — that is the cap doing its job, not the setting failing.</li>
+        <li><b>Sensitivity</b> — a room smears the sharp edges a file keeps, so what works for a
+          track playing here will never fire from across the room. The cost of Easy is honesty: a
+          burst stops meaning a distinct beat was hit.</li>
+        <li><b>Reacts to</b> — every burst used to come from the lowest four of sixty-four bands,
+          the kick drum and nothing else. Mids are voices, snares and guitars and land mid-screen;
+          highs are hats and cymbals, near the top. Mids have to be proportionally dominant rather
+          than merely loud, because a drum hit raises everything at once and would otherwise count
+          twice.</li>
+        <li><b>Colours</b> colour every layer at once. Random rolls the effects; the equalizer
+          takes one real colour from the set, since it cannot roll.</li>
+        <li><b>Performance</b> — Automatic starts from what this phone says about itself, then
+          watches its own frame rate and moves between Full, Balanced and Battery saver. Coming
+          down, bursts throw fewer pieces, the background carries fewer, and Battery saver redraws
+          the equalizer 24 times a second instead of 60. The menu names the running tier and the
+          frame rate that decided it, so a downgrade is never silent.</li>
+        <li><b>Player</b> — Minimized keeps what you touch and drops what you only read: the
+          transport and the track name stay, the queue and the scrubber go. Hidden leaves only the
+          visuals and this menu; anything playing stops, since there would be no way to stop it.</li>
+        <li><b>The microphone keeps the screen awake</b> while it listens, so a phone propped
+          against something does not go dark mid-track. Measured: about 12% of a battery an hour,
+          screen and all.</li>
+        <li><b>If the folder keeps asking</b> — Chrome's prompt sometimes offers three answers,
+          and the middle one, <em>Allow on every visit</em>, is the one meant to stick. Chrome
+          documents that an installed app keeps the permission with no prompt; on a real Android
+          phone it asks anyway, and nothing in this app can override that. A problem report
+          carries exactly what the browser answered.</li>
+        <li><b>Saved links</b> — any YouTube links saved by an older version are kept but cannot
+          play; Forget all saved links removes those too.</li>
       </ul>
-    </details>
-
-    <!-- LAST, AND CLOSED. Nothing in here is needed to use the app, nothing in here is part of
-         any Look, and every control starts at the renderer's own default — so opening this group
-         changes nothing until something is moved. The rows are built by pocket.js from the
-         renderers' exported tables rather than written out here, because twenty-six hand-written
-         rows is twenty-six chances for a label and a key to drift apart. -->
-    <details class="grp">
-      <summary>Advanced</summary>
-      <p class="set-note">The rest of what the renderers can do. These were always in there and
-        this app never asked for them. Nothing here is in a Look, so a Look will not undo your
-        changes and your changes will not drop the Look picker to Custom — the two are
-        independent on purpose.</p>
-      <p class="set-note">A changed value is marked. Some only show in some styles, which the
-        label says rather than hiding the row.</p>
-
-      <h3 class="adv-h">Equalizer</h3>
-      <div id="advEq" class="adv-box"></div>
-      <button class="sheet-btn ghost" id="advEqReset" type="button"
-              title="Put every equalizer value back to the renderer's own default">Reset the equalizer</button>
-
-      <h3 class="adv-h">Effects</h3>
-      <div id="advFx" class="adv-box"></div>
-      <button class="sheet-btn ghost" id="advFxReset" type="button"
-              title="Put every effects value back to the renderer's own default">Reset the effects</button>
+      </details>
+      <details class="grp" id="reportGrp">
+        <summary>Report a problem</summary>
+        <div class="set">
+          <label class="set-lab" for="reportText">What happened?</label>
+          <textarea id="reportText" rows="4" placeholder="What you did, what you expected, what happened instead."
+                    aria-describedby="reportNote"></textarea>
+          <p class="set-note" id="reportNote">Kept on this phone as you type.</p>
+        </div>
+        <div class="set">
+          <button class="sheet-btn" id="reportSend" type="button"
+                  title="Open your mail app with the report and the details below already filled in">Send by email</button>
+          <button class="sheet-btn ghost" id="reportCopy" type="button"
+                  title="Put the report and the details below on the clipboard"
+                  style="margin-top:0.5rem">Copy instead</button>
+          <p class="set-note" id="reportSaid" hidden></p>
+          <p class="set-note">Nothing is sent until you press send in your mail app. Copy is for a
+            phone with no mail app.</p>
+        </div>
+        <details class="grp" id="diagGrp">
+          <summary>Exactly what gets attached</summary>
+          <p class="set-note">Shown in full. The names of your music, your saved links and what is
+            playing are <b>not</b> in here.</p>
+          <pre class="diag" id="reportDiag">—</pre>
+        </details>
+      </details>
     </details>
 
     <details class="grp">
       <summary>About</summary>
       <p class="set-note">
         <strong>Hive Pocket Media Player</strong> <span id="aboutVer" class="mono"></span><br>
-        Everything runs on this phone and your music is never uploaded. Since 1.18.0 nothing here
-        reaches the network at all — YouTube was the last thing that did. Reporting a problem does
-        not change that: the app hands the text to your mail app, which is the thing that sends
-        it, after you press send in it.
+        Everything runs on this phone. Nothing here reaches the network after it loads, and your
+        music is never uploaded — there is nowhere for it to go.
+        <a href="privacy.html">Privacy</a>.
       </p>
+      <div id="installRow" hidden>
+        <p class="set-note">On the home screen it opens without the browser bars. It does not stop
+          the folder asking after a cold start — that is Android, not this app.</p>
+        <button class="sheet-btn" id="installBtn" type="button"
+                title="Add Hive Pocket to your home screen">Add to home screen</button>
+      </div>
+      <div id="installHow" hidden>
+        <p class="set-note"><b>To put this on your home screen</b>, open your browser's own menu
+          — the three dots in Chrome, the share button in Safari — and choose <b>Install app</b>
+          or <b>Add to Home screen</b>. A button appears here instead once Chrome offers one.</p>
+      </div>
       <p class="set-note">
-        On a browser that allows it — Chrome on Android since early 2025, and Chromium on the
-        desktop — the app remembers your music folder and offers it back with one tap. It can
-        never reopen it silently; no page is allowed to reach your files unasked. Anywhere else
-        it asks for your music each time, because nothing there can remember a folder and copying
-        every track into storage would double the space and could be wiped without warning.
-        Saved links come back everywhere.
-      </p>
-      <p class="set-note">
-        © 2026 Harold J. Harding. Licensed under the
-        <b>Apache License, Version 2.0</b> — use it, change it, ship it. The equalizer and effects
-        renderers come from the same author's Hive Visuals, where they drive a live streaming
-        overlay, and are the same author's work under the same licence here.
-        <br><a href="privacy.html">Privacy</a> — the short version is that nothing leaves this
-        phone, because there is nowhere for it to go.
+        © 2026 Harold J. Harding. <b>Apache License, Version 2.0</b> — use it, change it, ship
+        it. The equalizer and effects renderers are the same author's work from Hive Visuals,
+        under the same licence here.
       </p>
     </details>
 
