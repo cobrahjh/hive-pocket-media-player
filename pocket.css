@@ -356,6 +356,12 @@ html, body {
   font: inherit; font-weight: 600; cursor: pointer;
 }
 .sheet-btn.danger { background: none; color: #E0655A; border: 1px solid #E0655A; }
+/* The one link in the sheet that has to look like a button. An <a> is not a <button>: it brings
+   its own underline and text colour and it does not centre its own text. */
+a.sheet-btn {
+  display: flex; align-items: center; justify-content: center;
+  text-decoration: none; box-sizing: border-box;
+}
 
 :focus-visible { outline: 2px solid var(--hive); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }

@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.61.0-beta';
+  const VERSION = '1.62.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2442,6 +2442,32 @@
 
   function paintLook() { const el = $('lookSel'); if (el) el.value = currentLook(); }
 
+  // A LINK OUT, and deliberately nothing more. Ads were costed as the alternative on
+  // 2026-09-13: at any scale this app will actually reach they pay for about a coffee a month,
+  // and they cost the one claim it is built on — no network at all after it loads. A link the
+  // PERSON taps navigates their own browser away; it is not a request this app makes. So
+  // connect-src stays 'self', the worker stays offline-first, and privacy.html stays true.
+  //
+  // EMPTY MEANS THE ROW DOES NOT EXIST. No placeholder address, no "coming soon" button: a
+  // donate button that goes nowhere is worse than no donate button, and a placeholder is exactly
+  // the kind of thing that ships. https only — a payment link over http is not a small mistake.
+  const DONATE_URL = '';
+  function paintDonate() {
+    const row = $('donateRow'), a = $('donateLink');
+    if (!row || !a) return;
+    const ok = /^https:\/\/[^\s"']+$/.test(DONATE_URL);
+    setHidden(row, !ok);
+    if (!ok) return;
+    // setAttribute, not `a.href = ...`, and all three set HERE rather than trusted to the
+    // markup. The property-versus-attribute distinction is the one that cost 1.51.0, and the
+    // other two are a security property: without rel="noopener" the page that opens can reach
+    // back through window.opener. One place owns the whole link, so a hand-edit of index.html
+    // cannot quietly drop half of it.
+    a.setAttribute('href', DONATE_URL);
+    a.setAttribute('target', '_blank');
+    a.setAttribute('rel', 'noopener noreferrer');
+  }
+
   function paintSheet() {
     $('ambientSel').value = readAmbient();
     $('beatSel').value = readBeatEffect();
@@ -2467,6 +2493,7 @@
     setHidden($('forgetLinks'), !n);       // same rule as Forget the folder: nothing to forget, no red button
     $('aboutVer').textContent = 'beta ' + VERSION.replace(/-beta$/, '');
     buildAdvanced();
+    paintDonate();
     paintGroupValues();
     paintTips();
   }
@@ -3893,6 +3920,7 @@
     get tutorialSteps() { return TUT.length; },
     get tutorialSeen() { return tutSeen(); },
     get tutorialRev() { return TUT_REV; },
+    get donateUrl() { return DONATE_URL; },
     get canRemember() { return canRemember(); },
     get folderRemembered() { return !!folderHandle; },
     get folderDiag() {

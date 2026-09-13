@@ -30,7 +30,7 @@
 'use strict';
 const fs = require('fs');
 const path = require('path');
-const { boot, fire, settle, makeCheck } = require('./dom-stub');
+const { boot, fire, settle, makeCheck, shown } = require('./dom-stub');
 
 const SRC = fs.readFileSync(path.join(__dirname, '..', 'pocket.js'), 'utf8');
 const VER = /const VERSION = '([^']+)'/.exec(SRC)[1];
@@ -250,7 +250,39 @@ function usedStore(extra) {
       + 'in numbering is the bug this release removes');
   }
 
-  // ── 11. this suite must be able to fail ──────────────────────────────────────────────────
+  // ── 11. the donate link is a link or it is nothing ───────────────────────────────────────
+  // Ads were costed and refused because they would have cost the app its one claim — no network
+  // at all after it loads — for about a coffee a month. What went in instead is a single link
+  // out. The failure mode is a button that goes nowhere, which is worse than no button, and a
+  // placeholder address is exactly the kind of thing that ships by accident.
+  check('an unset donate link means no row at all', app.pocket.donateUrl === ''
+    ? !shown(app.els('donateRow')) : true, 'DONATE_URL is set to ' + app.pocket.donateUrl);
+
+  const DECL = "const DONATE_URL = '';";
+  check('the donate constant is where this case thinks it is', SRC.indexOf(DECL) >= 0,
+    'DONATE_URL has moved or been reworded - update this string rather than deleting the case');
+  if (SRC.indexOf(DECL) >= 0) {
+    const paid = boot({ src: SRC.replace(DECL, "const DONATE_URL = 'https://ko-fi.com/example';"), store: usedStore() });
+    await settle();
+    fire(paid.els('menuBtn'), 'click');
+    await settle();
+    check('a real https address shows the row', shown(paid.els('donateRow')));
+    check('and puts the address on the link',
+      paid.els('donateLink').getAttribute('href') === 'https://ko-fi.com/example',
+      String(paid.els('donateLink').getAttribute('href')));
+    check('the link opens away from the app', paid.els('donateLink').getAttribute('target') === '_blank');
+    check('and cannot reach back into it',
+      /noopener/.test(String(paid.els('donateLink').getAttribute('rel'))),
+      String(paid.els('donateLink').getAttribute('rel')));
+
+    // A payment link over http is not a small mistake, so it is refused rather than shown.
+    const plain = boot({ src: SRC.replace(DECL, "const DONATE_URL = 'http://ko-fi.com/example';"), store: usedStore() });
+    await settle();
+    check('an http address is refused', !shown(plain.els('donateRow')),
+      'a payment link served over http must not be offered at all');
+  }
+
+  // ── 12. this suite must be able to fail ──────────────────────────────────────────────────
   // Cut the re-measure out of applyEqHeight and require case 3 to collapse. Without this the
   // whole file could be asserting things that are true of a broken build as well.
   const LINE = "    if (eq && eqShown()) eq.resize();\n  }";

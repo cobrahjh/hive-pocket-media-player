@@ -29,4 +29,11 @@ music, your saved link addresses, or what is playing — only counts. All of it 
 the sheet before anything can be sent, because a diagnostic block nobody dares read is worse than
 none.
 
+**There are no ads and no tracking, and that is a decision rather than an oversight.** Ads were
+costed in September 2026 and refused: at any realistic size they would have paid for about a
+coffee a month, and they would have cost the claim above — an ad is a network request, so
+"nothing leaves this device" would simply have stopped being true. The only money thing in the
+app is a **link** in About that opens your own browser if you choose to tap it. The app makes no
+request either way.
+
 **YouTube was removed in 1.18.0**, and it was the last thing here that touched the network.
