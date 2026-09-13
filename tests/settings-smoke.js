@@ -17,15 +17,15 @@
  * property and forgets the one re-measure by hand looks right on the next rotation and wrong
  * until then. That is the case that would otherwise ship.
  *
- * THE DICE HINT is a pulse that must stop for good the first time the button is pressed. The
- * failure mode is annoyance rather than an error: a hint that comes back after a restart is a
- * header that blinks at someone forever, and nothing else in this folder can see it.
+ * THE DICE is marked permanently, in CSS, since 1.65.0 (it pulsed until first pressed in 1.60.0
+ * and Harold reversed that). What is asserted is that the mark lives in the stylesheet with no
+ * JavaScript gate, that it is a compositor-only transform, and that it stops under reduced
+ * motion - the one accessibility failure a header animation can have.
  *
  * NOT COVERED: pixels. The stub's canvas swallows every drawing call, so "the bars are half as
  * tall" is asserted as "the custom property says 50% and the renderer was told to re-measure",
  * never as a picture. Whether 50% is the right default is a judgement and not an assertion.
- * Whether the pulse reads as inviting rather than nagging is also a judgement; the only thing
- * asserted about it is that it ends.
+ * Whether the travelling highlight reads as inviting rather than busy is also a judgement.
  */
 'use strict';
 const fs = require('fs');
@@ -49,11 +49,10 @@ function startVisuals(app) {
   fire(stage, 'pointerup', { pointerId: 2, clientX: 200, clientY: 100 });
 }
 
-/** A store for an app that is not brand new: the tutorial is done and the dice has been used. */
+/** A store for an app that is not brand new: the tutorial is done. */
 function usedStore(extra) {
   const m = new Map();
   m.set('hive-pocket.tutorial', VER);
-  m.set('hive-pocket.rolled', '1');
   if (extra) for (const [k, v] of Object.entries(extra)) m.set(k, v);
   return m;
 }
@@ -177,38 +176,35 @@ function usedStore(extra) {
     (dirty.pocket.tips.shown || []).indexOf('mic') >= 0,
     'replaying eleven reminders at someone who has read them is the nagware the feature avoids: '
     + JSON.stringify(dirty.pocket.tips.shown));
-  check('and the dice stays quiet', dirty.pocket.rolled === true);
 
-  // ── 8. the dice says so once ─────────────────────────────────────────────────────────────
-  const fresh = boot({ store: (() => { const s = new Map(); s.set('hive-pocket.tutorial', VER); return s; })() });
+  // ── 8. the dice is always marked, and it is marked in CSS ────────────────────────────────
+  // 1.60.0 pulsed it until it had been pressed once; 1.65.0 reversed that on Harold's call -
+  // always on, a highlight travelling round the outline. A permanent mark needs no state, so
+  // the honest assertion is on the stylesheet: the animation is on #rollBtn unconditionally,
+  // there is no class gate left in the app for it, and the once-only key is gone from the code.
+  const CSS = fs.readFileSync(path.join(__dirname, '..', 'pocket.css'), 'utf8');
+  check('the orbit is on the dice itself, not on a class',
+    /#rollBtn::before\s*\{[^}]*animation:\s*dice-orbit/.test(CSS),
+    'the travelling highlight must not depend on JavaScript adding a class');
+  check('the orbit is a transform, which the compositor runs alone',
+    /@keyframes dice-orbit\s*\{[^}]*transform:\s*rotate/.test(CSS));
+  check('and it stops under reduced motion',
+    /prefers-reduced-motion[^}]*\{[^]*?#rollBtn::before[^}]*animation:\s*none/.test(CSS),
+    'a travelling light that ignores reduced-motion is the one accessibility failure a header can have');
+  // The QUOTED literal - a string the code could read or write - not the bare name, which the
+  // comment explaining its removal is allowed to say.
+  check('the once-only key is gone from the app', SRC.indexOf("'hive-pocket.rolled'") < 0,
+    'nothing should read or write it any more; old installs keep the value and nothing cares');
+  check('and no code path toggles a hint class', SRC.indexOf("'hint'") < 0);
+
+  // The app still has to KNOW nothing about it: pressing the dice, running the tour and reloading
+  // change nothing, because there is nothing to change.
+  const fresh = boot({ store: (() => { const s2 = new Map(); s2.set('hive-pocket.tutorial', VER); return s2; })() });
   await settle();
-  check('a new app pulses the dice', fresh.pocket.rollHint === true);
-  check('and knows it has never been rolled', fresh.pocket.rolled === false);
   fire(fresh.els('rollBtn'), 'click');
-  check('one press stops it for good', fresh.pocket.rollHint === false);
-  check('and records it', fresh.pocket.rolled === true);
-
-  const again = boot({ store: usedStore() });
-  await settle();
-  check('and it stays stopped across a restart', again.pocket.rollHint === false,
-    'a hint that comes back after a restart is a header that blinks forever');
-
-  // Surprise me in the menu is the same action and must count the same, or someone who found it
-  // there keeps being pointed at the header.
-  const viaMenu = boot({ store: (() => { const s = new Map(); s.set('hive-pocket.tutorial', VER); return s; })() });
-  await settle();
-  fire(viaMenu.els('surpriseBtn'), 'click');
-  check('the menu button counts too', viaMenu.pocket.rollHint === false);
-
-  // ── 9. never during the tutorial ─────────────────────────────────────────────────────────
-  // Step six rings this exact button. A ring around a pulsing button is two things pointing at
-  // one control, and the ring is the one that came with an explanation.
-  const tour = boot({ store: (() => { const s = new Map(); s.set('hive-pocket.tutorial', VER); return s; })() });
-  await settle();
-  tour.pocket.tutStart();
-  check('no pulse while the tour is up', tour.pocket.rollHint === false);
-  tour.pocket.tutEnd();
-  check('and it comes back when the tour ends', tour.pocket.rollHint === true);
+  check('pressing the dice writes no new key',
+    [...fresh.store.keys()].every((k) => k !== 'hive-pocket.rolled'),
+    JSON.stringify([...fresh.store.keys()]));
 
   // ── 10. the tour runs again when the TOUR changes, not when the app does ─────────────────
   // It used to key off VERSION, so a seven-step tutorial interrupted everyone on every release

@@ -347,6 +347,14 @@ function boot(opts) {
         // purpose: Chrome silently answers 'denied'; this answers 'denied' AND records that the
         // call arrived without a gesture, so the failure is named rather than mimicked.
         if (!activation.isActive) { folder.askedWithoutGesture = (folder.askedWithoutGesture || 0) + 1; return Promise.resolve('denied'); }
+        // THE ASK SPENDS THE GESTURE. requestPermission() is an activation-consuming call: after
+        // one ask the tap is used up, and a second call from the same tap finds no activation.
+        // The fake let it persist until 1.65.0, and the play-after-permission bug lived in exactly
+        // that gap - two callers from one tap, the second finding no gesture and giving up early.
+        if (fo.consumes !== false) activation.isActive = false;
+        // Deferred, when a case needs the sheet to still be up while something else happens - the
+        // real one is up for as long as a person takes to read it. folder.answer(v) settles it.
+        if (fo.defer) return new Promise((res) => { folder.answer = (v) => res(v || fo.answer || 'granted'); });
         return Promise.resolve(fo.answer || 'granted');
       },
       entries: async function* () { for (const f of files) yield [f.name, f]; },

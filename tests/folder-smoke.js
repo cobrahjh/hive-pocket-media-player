@@ -154,5 +154,50 @@ async function loaded(app) { for (let i = 0; i < 6; i++) await settle(); }
   check('and is told denied by a browser that showed nothing',
     broken.pocket.folderDiag.afterAsk === 'denied', JSON.stringify(broken.pocket.folderDiag));
 
+  // ── 9. press PLAY as the first touch, and it plays ───────────────────────────────────────
+  // Harold, 1.64.0: "after the app asks for copy and file permissions and has all of the
+  // tracks, it doesn't start playing until you press the play button again." One tap reached
+  // reconnectFolder() twice - the document-level auto-reconnect on pointerup, then the play
+  // button's own click a few milliseconds later via play(0) on a pending track. The first ask
+  // spent the gesture; the second found none, returned at once, and its "then play it" ran
+  // before the folder had arrived. So the fake's permission is DEFERRED here, the way a real
+  // sheet is up for as long as a person takes to read it, and play is pressed while it is up.
+  const tap = boot({ folder: { state: 'prompt', defer: true } });
+  await loaded(tap);
+  check('the queue is locked before the tap', tap.pocket.queue.every((x) => x.pending === true));
+  tap.activation(true);
+  tap.doc_fire('pointerup', { pointerType: 'touch', pointerId: 1 });    // the auto-reconnect asks
+  fire(tap.els('playBtn'), 'click');                                    // the same tap, as a click
+  await settle();
+  check('one tap is one ask, however many callers it reaches', tap.folder.asks === 1,
+    String(tap.folder.asks) + ' asks - a second ask from the same tap has no gesture to make it with');
+  check('the sheet is still up', typeof tap.folder.answer === 'function');
+  tap.folder.answer('granted');
+  await loaded(tap);
+  await loaded(tap);
+  check('the folder came back', tap.pocket.queue.some((x) => x.handle || x.file),
+    JSON.stringify(tap.pocket.queue.map((x) => x.name)));
+  check('AND IT IS PLAYING, with no second press', tap.media.paused === false,
+    'every track loaded and nothing played - the play intent was lost between the two callers');
+
+  // The mutation: let every caller make its own ask, which is what the code did. Case 9 must
+  // collapse - either the tap asks twice, or nothing plays, and on the fake it is both.
+  const ONCE = "    if (reconnectInFlight) return reconnectInFlight;\n";
+  check('the reconnect guard is where this case thinks it is', SRC.indexOf(ONCE) >= 0,
+    'reconnectFolder() has been reworded - update the string, do not delete the case');
+  if (SRC.indexOf(ONCE) >= 0) {
+    const twice = boot({ folder: { state: 'prompt', defer: true }, src: SRC.replace(ONCE, '') });
+    await loaded(twice);
+    twice.activation(true);
+    twice.doc_fire('pointerup', { pointerType: 'touch', pointerId: 1 });
+    fire(twice.els('playBtn'), 'click');
+    await settle();
+    twice.folder.answer('granted');
+    await loaded(twice);
+    await loaded(twice);
+    check('without the guard the play is lost', twice.media.paused !== false,
+      'the mutation changed nothing, so case 9 was never proving the guard');
+  }
+
   t.report();
 })();

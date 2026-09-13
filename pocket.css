@@ -744,17 +744,44 @@ input[type="checkbox"].adv-in { width: 22px; height: 22px; justify-self: start; 
 @media (prefers-reduced-motion: reduce) { .tip-bar { animation: none; } }
 
 
-/* ── the dice, until it has been pressed once ─────────────────────────────────────────────
-   Surprise me changes more of the picture in one tap than anything else in this app, and in the
-   header it looks exactly like every other icon. So it says so - quietly, on a long cycle, and
-   only until it has been pressed once ever. A header button that MOVES is a header button that
-   gets pressed by accident, so this is opacity and a soft ring and no transform at all. */
-@keyframes roll-hint {
-  0%, 70%, 100% { opacity: 0.6; box-shadow: 0 0 0 0 rgba(245, 166, 35, 0); }
-  84%           { opacity: 1;   box-shadow: 0 0 0 7px rgba(245, 166, 35, 0.12); }
+/* ── the dice, always ─────────────────────────────────────────────────────────────────────
+   Always pulsing, with a highlight travelling round the outline - Harold's call on 2026-09-13,
+   reversing the once-only hint that shipped in 1.60.0. Surprise me changes more of the picture
+   in one tap than anything else here, and in the header it looked like every other icon in the
+   row; so it is marked as the one that is different, permanently.
+
+   HOW IT IS DRAWN. A conic gradient - mostly transparent, one bright wedge - painted on a circle
+   larger than the button and spinning behind it. An inner panel in the page's own colour covers
+   everything but a 2px rim, so the only place the wedge shows is that rim, going round. Two
+   pseudo-elements and no JavaScript; the spin is a transform, which the compositor runs without
+   touching the main thread, and a transform rather than a custom property because @property is
+   not everywhere yet and a spinning element is. overflow:hidden clips the circle to the button,
+   isolation:isolate keeps the negative z-indexes inside the button rather than behind the page. */
+#rollBtn {
+  position: relative; overflow: hidden; isolation: isolate;
+  border-color: rgba(246, 165, 24, 0.4);
 }
-#rollBtn.hint { animation: roll-hint 3.4s ease-in-out infinite; border-radius: 10px; }
-/* Nothing pulses when the phone has asked apps not to move. WHAT STOPS BEING VISIBLE is the
-   nudge and only the nudge: the dice is in the same place, with the same tooltip, and does the
-   same thing. It is also named in the reminders and in How it works. */
-@media (prefers-reduced-motion: reduce) { #rollBtn.hint { animation: none; opacity: 1; } }
+#rollBtn::before {
+  content: ''; position: absolute; z-index: -2;
+  inset: -60%; border-radius: 50%;
+  background: conic-gradient(from 0deg,
+    transparent 0deg 235deg, rgba(246, 165, 24, 0.25) 290deg, var(--hive) 338deg, transparent 360deg);
+  animation: dice-orbit 2.6s linear infinite;
+}
+#rollBtn::after {
+  content: ''; position: absolute; z-index: -1;
+  inset: 2px; border-radius: calc(var(--radius) - 2px);
+  background: var(--ground);
+}
+@keyframes dice-orbit { to { transform: rotate(360deg); } }
+/* The icon breathes on the same clock, so the button reads as alive and not only as lit. */
+@keyframes dice-breathe { 0%, 100% { color: var(--muted); } 50% { color: var(--hive); } }
+#rollBtn > svg { animation: dice-breathe 2.6s ease-in-out infinite; }
+/* NOTHING MOVES when the phone has asked apps not to move. WHAT STOPS BEING VISIBLE is the
+   travelling light and the breathe. The dice stays the one marked button in the row - rim and
+   icon held in the highlight colour - it just holds still about it. */
+@media (prefers-reduced-motion: reduce) {
+  #rollBtn::before, #rollBtn > svg { animation: none; }
+  #rollBtn::before { background: rgba(246, 165, 24, 0.55); }
+  #rollBtn > svg { color: var(--hive); }
+}

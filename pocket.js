@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.64.0-beta';
+  const VERSION = '1.65.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -811,25 +811,13 @@
   //
   // WHAT STOPS BEING VISIBLE when it is switched off: nothing the app does, only these
   // sentences. Everything a tip names is also in Settings → Help → How it works.
-  // THE DICE SAYS SO, ONCE. Surprise me changes more of the picture in one tap than anything
-  // else in this app, and in the header it looks exactly like every other icon. So it pulses
-  // until it has been pressed once, ever, and then never again — a thing that happens to a new
-  // app and not to a used one. Not a reminder: reminders are a pool that empties, this is one
-  // button with one thing to say. What stops being visible under reduced motion is the nudge
-  // and nothing else; the dice is in the same place and does the same thing.
-  const ROLLED_KEY = 'hive-pocket.rolled';
-  function hasRolled() { try { return localStorage.getItem(ROLLED_KEY) === '1'; } catch (e) { return true; } }
-  function markRolled() {
-    try { localStorage.setItem(ROLLED_KEY, '1'); } catch (e) {}
-    paintRollHint();
-  }
-  function paintRollHint() {
-    const b = $('rollBtn');
-    if (!b) return;
-    // Never during the tutorial: step six rings this very button, and a ring around a pulsing
-    // button is two things pointing at one control.
-    b.classList.toggle('hint', !hasRolled() && tutAt < 0);
-  }
+  // THE DICE IS ALWAYS MARKED, and it is marked in pocket.css rather than here. The first cut
+  // pulsed until it had been pressed once, ever, on a nagware argument; Harold's call on
+  // 2026-09-13 was the opposite — always on, with a highlight travelling round the outline —
+  // because Surprise me changes more of the picture in one tap than anything else in the app and
+  // looked like every other icon in the row. A permanent mark needs no state, no key and no
+  // JavaScript, so the once-only key (hive-pocket.rolled) is gone with the code that read it.
+  // Old installs still carry that key in storage; nothing reads it and nothing ever will.
 
   const TIPS_KEY = 'hive-pocket.tips';
   const TIP_GAP_MS = 20 * 60 * 60 * 1000;   // a day, less four hours, so it is not always the same time of day
@@ -2304,7 +2292,23 @@
       + 'anything. Allow it and your music comes straight back.';
   }
 
-  async function reconnectFolder() {
+  // ONE ASK PER GESTURE, and the second caller waits for the first. Pressing PLAY as the first
+  // touch on a cold start reaches this twice from one tap: the document-level auto-reconnect on
+  // pointerup, then the play button's own click a few milliseconds later, which finds a pending
+  // track and calls here again. requestPermission() spends the activation the first time, so
+  // the second call found no gesture, returned at once, and its caller looked for a track to
+  // play BEFORE the folder had arrived - found none, and stopped. Every track then loaded and
+  // nothing played, and Harold pressed play a second time. The second caller now joins the ask
+  // already in flight instead of making its own, and so its "then play it" lands after the
+  // folder does.
+  let reconnectInFlight = null;
+  function reconnectFolder() {
+    if (reconnectInFlight) return reconnectInFlight;
+    reconnectInFlight = reconnectFolderOnce().finally(() => { reconnectInFlight = null; });
+    return reconnectInFlight;
+  }
+
+  async function reconnectFolderOnce() {
     if (!folderHandle) return;
     // The same check on the deliberate path, so a call that arrives with no gesture — a promise
     // chain that awaited something first, a synthetic click — records what it is instead of a
@@ -2927,13 +2931,12 @@
     $('tutNext').focus();
   }
 
-  function tutStart() { hideTip(); tutShow(0); paintRollHint(); }
+  function tutStart() { hideTip(); tutShow(0); }
   function tutEnd() {
     setHidden($('tut'), true);
     setHidden($('tutRing'), true);
     tutAt = -1;
     tutMarkSeen();
-    paintRollHint();
     if (!$('sheet').hidden) closeSheet();
   }
 
@@ -2989,10 +2992,9 @@
     ADV_KEY, MIC_KEY];
   // KEPT, each for its own reason. The links, the folder and its track names are the person's
   // music rather than a setting. The report box is something they were part way through
-  // writing. The tutorial, the reminders already seen and the dice's one nudge are history: an
-  // app that replays all of it is an app that treats "put my settings back" as "pretend we have
-  // never met".
-  const KEEP_KEYS = [LINKS_KEY, NAMES_KEY, REPORT_KEY, TUT_KEY, TIPS_KEY, ROLLED_KEY];
+  // writing. The tutorial and the reminders already seen are history: an app that replays them
+  // is an app that treats "put my settings back" as "pretend we have never met".
+  const KEEP_KEYS = [LINKS_KEY, NAMES_KEY, REPORT_KEY, TUT_KEY, TIPS_KEY];
   const RESET_NOTE = 'Puts every setting back to how it arrived. Your music, your saved links '
                    + 'and the folder you picked are not touched.';
 
@@ -3054,10 +3056,10 @@
   }
 
   $('lookSel').addEventListener('change', () => applyLook($('lookSel').value));
-  $('surpriseBtn').addEventListener('click', () => { surprise(); markRolled(); });
+  $('surpriseBtn').addEventListener('click', surprise);
   // The same action from the header. It flashes what it landed on, because a roll that changes
   // the picture with no word for what it did leaves you unable to ask for it again.
-  $('rollBtn').addEventListener('click', () => { surprise(); sayRoll(); markRolled(); });
+  $('rollBtn').addEventListener('click', () => { surprise(); sayRoll(); });
 
   // Names what was just rolled, on the stage, briefly. Uses the existing hint element rather than
   // adding a second overlay: it is already the one thing on the stage that speaks.
@@ -3982,7 +3984,6 @@
   micNote('Not listening.');
   applyPlayer();
   applyEqHeight();
-  paintRollHint();
   // Remembered microphone, reopened without a tap. This works — and ONLY works — because
   // getUserMedia needs no gesture once permission has been granted for this origin. It is a
   // promise that could not be kept for system audio, which is refused without a fresh tap
@@ -4032,8 +4033,6 @@
     get eqStyle() { return readEqStyle(); },
     get eqShape() { return eqShapeNow; },
     get eqHeight() { return readEqHeight(); },
-    get rolled() { return hasRolled(); },
-    get rollHint() { const b = $('rollBtn'); return !!(b && b.classList.contains('hint')); },
     // The two lists themselves, so a suite can require every key in this file to be in one of
     // them rather than trusting that somebody remembered.
     get resetKeys() { return RESET_KEYS.slice(); },
