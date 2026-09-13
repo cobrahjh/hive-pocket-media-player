@@ -11,9 +11,9 @@ The full description is indexed by Play, so it is written as prose rather than a
 
 ## Short description (80 max)
 
-    Turns anything you can hear into light. Your music, or the whole room.
+    Turns anything you can hear into light …because you're awesome as the music!
 
-69 characters.
+76 characters. Harold's tagline, his punctuation.
 
 ## Full description
 
@@ -46,6 +46,8 @@ The full description is indexed by Play, so it is written as prose rather than a
     dropped entirely when your phone asks apps to reduce motion.
 
     Free, open source, and licensed under Apache 2.0.
+
+    …because you're awesome as the music!
 
 Roughly 1,500 characters, well inside the limit, with room to add later.
 

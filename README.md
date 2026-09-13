@@ -1,5 +1,7 @@
 # Hive Pocket Media Player
 
+*…because you're awesome as the music!*
+
 A music player with live visuals that runs entirely on your phone.
 
 **https://pocket.kinghive.online**

@@ -331,6 +331,8 @@ html, body {
 .set { display: flex; flex-direction: column; gap: 0.4rem; }
 .set-lab { font-size: 0.8rem; font-weight: 600; }
 .set-note { margin: 0; font-size: 0.72rem; color: var(--muted); line-height: 1.55; }
+/* Harold's line, under the name in About. His words, his punctuation. */
+.tagline { color: var(--hive); font-style: italic; }
 /* EVERY select in the sheet, not a list of ids. This rule used to name #ambientSel and
    #visualsSel, and each of the five pickers added after it — look, equalizer, colours, bursts,
    sensitivity — quietly rendered as an unstyled native control, light grey on black, in a dark

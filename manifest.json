@@ -2,7 +2,7 @@
   "id": "/?hive-pocket",
   "name": "Hive Pocket Media Player",
   "short_name": "Hive Pocket",
-  "description": "A music player with live visuals that runs entirely on your phone. Pick music from the device and it plays, with an equalizer and effects drawn from that audio. No account, no server, no network after the first load.",
+  "description": "A music player with live visuals that runs entirely on your phone. Pick music from the device and it plays, with an equalizer and effects drawn from that audio. No account, no server, no network after the first load. …because you're awesome as the music!",
   "start_url": "./?source=installed",
   "scope": "./",
   "display": "standalone",
