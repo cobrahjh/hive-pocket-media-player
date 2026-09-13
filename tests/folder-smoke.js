@@ -199,5 +199,62 @@ async function loaded(app) { for (let i = 0; i < 6; i++) await settle(); }
       'the mutation changed nothing, so case 9 was never proving the guard');
   }
 
+  // ── 10. RECONNECT gives the music back playing, on the song you were on ─────────────────
+  // Harold, 1.66.0, correcting case 9's reading of his report: "you click reconnect for your
+  // media, and then it connects, but it doesn't do anything - you have to press once or twice
+  // more just for it to play." Reconnect restored the library and said "press play", which is
+  // "give me my music back" answered with "here is a list". Now it resumes.
+  const rc = boot({ folder: { state: 'prompt', defer: true } });
+  rc.store.set('hive-pocket.lasttrack', 'two');            // the song they were on last time
+  await loaded(rc);
+  check('locked before the tap', rc.pocket.queue.every((x) => x.pending === true));
+  rc.activation(true);
+  fire(rc.els('reconnectBtn'), 'click');
+  await settle();
+  check('Reconnect asks once', rc.folder.asks === 1, String(rc.folder.asks));
+  rc.folder.answer('granted');
+  await loaded(rc); await loaded(rc);
+  check('the folder is back', rc.pocket.queue.some((x) => x.handle || x.file));
+  check('AND IT IS PLAYING, with no further press', rc.media.paused === false,
+    'Reconnect connected and then did nothing, which is the report');
+  check('and it is the song they were on, not the first in the list',
+    rc.els('nowTitle').textContent === 'two', rc.els('nowTitle').textContent);
+
+  // The Settings-sheet Reconnect is the same promise.
+  const rc2 = boot({ folder: { state: 'prompt' } });
+  await loaded(rc2);
+  rc2.activation(true);
+  fire(rc2.els('folderReconnect'), 'click');
+  await loaded(rc2); await loaded(rc2);
+  check('the Reconnect in Settings plays too', rc2.media.paused === false);
+  check('and with no remembered song it takes the first real one',
+    rc2.els('nowTitle').textContent === 'one', rc2.els('nowTitle').textContent);
+
+  // THE FIRST-TOUCH AUTO-RECONNECT DOES NOT PLAY. A touch that happened to be opening the menu
+  // must not start music. It restores and stops - that is the line between "give me my music
+  // back" (a button that says Reconnect) and "I touched the screen".
+  const brush = boot({ folder: { state: 'prompt' } });
+  await loaded(brush);
+  brush.activation(true);
+  brush.doc_fire('pointerup', { pointerType: 'touch', pointerId: 1 });
+  await loaded(brush); await loaded(brush);
+  check('a stray first touch brings the folder back', brush.pocket.queue.some((x) => x.handle || x.file));
+  check('but does not start the music', brush.media.paused !== false,
+    'an incidental touch must never start playback');
+
+  // Mutation: forget the intent, which is what the code did. Case 10 must collapse.
+  const WANT = "    if (opts && opts.play === true) reconnectWantPlay = true;\n";
+  check('the resume flag is where this case thinks it is', SRC.indexOf(WANT) >= 0,
+    'reconnectFolder() has been reworded - update the string, do not delete the case');
+  if (SRC.indexOf(WANT) >= 0) {
+    const forgot = boot({ folder: { state: 'prompt' }, src: SRC.replace(WANT, '') });
+    await loaded(forgot);
+    forgot.activation(true);
+    fire(forgot.els('reconnectBtn'), 'click');
+    await loaded(forgot); await loaded(forgot);
+    check('without the intent Reconnect connects and does nothing', forgot.media.paused !== false,
+      'the mutation changed nothing, so case 10 was never proving the resume');
+  }
+
   t.report();
 })();

@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.67.0-beta';
+  const VERSION = '1.68.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1717,6 +1717,7 @@
     else el.removeAttribute('crossorigin');
     el.corsTried = !!(t.link && !(opts && opts.noCors));
     el.src = t.url;
+    if (!t.link) writeLastTrack(t.name);
     $('nowTitle').textContent = t.name;
     $('nowSub').textContent = 'From this device';
     setHidden($('stageHint'), true);
@@ -1937,6 +1938,12 @@
   // NAMES ONLY. Never a path, never a URL, never anything that could rebuild where the music
   // lives — those are the user's and stay in the handle the browser guards.
   const NAMES_KEY = 'hive-pocket.foldernames';
+  // THE TRACK YOU WERE ON. Names only, like the queue: never a path, never the audio. Written on
+  // every file play so that Reconnect can hand back the same song rather than the first one in
+  // the list, which on a folder sorted by name is whatever starts with a number.
+  const LAST_KEY = 'hive-pocket.lasttrack';
+  function readLastTrack() { try { return localStorage.getItem(LAST_KEY) || ''; } catch (e) { return ''; } }
+  function writeLastTrack(name) { try { localStorage.setItem(LAST_KEY, String(name || '')); } catch (e) {} }
   const NAMES_MAX = 500;
 
   function readNames() {
@@ -2301,11 +2308,28 @@
   // nothing played, and Harold pressed play a second time. The second caller now joins the ask
   // already in flight instead of making its own, and so its "then play it" lands after the
   // folder does.
-  let reconnectInFlight = null;
-  function reconnectFolder() {
+  //
+  // RECONNECT GIVES THE MUSIC BACK PLAYING. Harold, 1.66.0: "you click reconnect for your media,
+  // and then it connects, but it doesn't do anything - you have to press once or twice more just
+  // for it to play." It restored the library and then said "press play", which is the app
+  // treating "give me my music back" as "list my music". The two Reconnect buttons and any
+  // caller that was already trying to play now resume the track you were on, or the first one
+  // if that name is gone. The FIRST-TOUCH auto-reconnect deliberately does not: a touch that
+  // happened to be opening the menu should not start music, so it restores and stops.
+  let reconnectInFlight = null, reconnectWantPlay = false;
+  function reconnectFolder(opts) {
+    if (opts && opts.play === true) reconnectWantPlay = true;
     if (reconnectInFlight) return reconnectInFlight;
     reconnectInFlight = reconnectFolderOnce().finally(() => { reconnectInFlight = null; });
     return reconnectInFlight;
+  }
+
+  /** The track you were on, or the first real one. -1 when the folder came back empty. */
+  function resumeIndex() {
+    const want = readLastTrack();
+    let i = want ? queue.findIndex((t) => t.name === want && (t.handle || t.file)) : -1;
+    if (i < 0) i = queue.findIndex((t) => t.handle || t.file);
+    return i;
   }
 
   async function reconnectFolderOnce() {
@@ -2330,8 +2354,13 @@
     // Asking again is allowed and is the ordinary way back from a mis-tap on the sheet; choosing
     // the folder again is the last resort, not the first instruction.
     if (ok !== 'granted') { folderNote('The folder was not allowed. Tap any track to ask again, '
-      + 'or pick the folder again with the folder button.', true); return; }
+      + 'or pick the folder again with the folder button.', true); reconnectWantPlay = false; return; }
     await loadFolder(folderHandle);
+    if (reconnectWantPlay) {
+      reconnectWantPlay = false;
+      const i = resumeIndex();
+      if (i >= 0) play(i);
+    }
   }
 
   // The queue as it looks before the tap: every track by name, none of them playable yet, and
@@ -2990,11 +3019,11 @@
   const RESET_KEYS = [VISUALS_KEY, MODES_KEY, AMBIENT_KEY, BEAT_KEY, SENS_KEY, PAL_KEY, EQ_KEY,
     EQH_KEY, QUAL_KEY, PUNCH_KEY, DRIVE_KEY, TOUCH_KEY, FTHROW_KEY, PLAYER_KEY, HIDE_KEY,
     ADV_KEY, MIC_KEY];
-  // KEPT, each for its own reason. The links, the folder and its track names are the person's
-  // music rather than a setting. The report box is something they were part way through
+  // KEPT, each for its own reason. The links, the folder, its track names and the track you were
+  // on are the person's music rather than a setting. The report box is something they were part way through
   // writing. The tutorial and the reminders already seen are history: an app that replays them
   // is an app that treats "put my settings back" as "pretend we have never met".
-  const KEEP_KEYS = [LINKS_KEY, NAMES_KEY, REPORT_KEY, TUT_KEY, TIPS_KEY];
+  const KEEP_KEYS = [LINKS_KEY, NAMES_KEY, LAST_KEY, REPORT_KEY, TUT_KEY, TIPS_KEY];
   const RESET_NOTE = 'Puts every setting back to how it arrived. Your music, your saved links '
                    + 'and the folder you picked are not touched.';
 
@@ -3142,9 +3171,9 @@
   $('installBtn').addEventListener('click', doInstall);
 
   $('folderPick').addEventListener('click', () => { closeSheet(); pickFolder(); });
-  $('folderReconnect').addEventListener('click', () => { closeSheet(); reconnectFolder(); });
+  $('folderReconnect').addEventListener('click', () => { closeSheet(); reconnectFolder({ play: true }); });
   $('folderForget').addEventListener('click', forgetFolder);
-  $('reconnectBtn').addEventListener('click', reconnectFolder);
+  $('reconnectBtn').addEventListener('click', () => reconnectFolder({ play: true }));
 
   $('reportSend').addEventListener('click', sendReport);
   $('reportCopy').addEventListener('click', copyReport);
@@ -4054,6 +4083,7 @@
     get driveAvg() { return { mid: midAvg, high: highAvg }; },
     get touch() { return readTouch(); },
     get fingerThrow() { return readThrow(); },
+    get lastTrack() { return readLastTrack(); },
     get ripples() { return ripples.length; },
     diagnostics,
     reportBody,
