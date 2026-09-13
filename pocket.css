@@ -295,15 +295,31 @@ html, body {
 
 /* ── settings sheet ── */
 .sheet-back { position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 20; }
+/* IT COMES DOWN FROM THE BUTTON, not up from the floor (2026-09-13). A bottom sheet is the
+   phone convention and the thumb argument for it is real, but the control that opens this one is
+   the three-bar button in the HEADER: pressing something at the top and having the answer appear
+   at the bottom is the thing Harold called out as not making sense. A menu should come out of
+   the thing you pressed.
+
+   WHAT THAT COSTS, and it is not nothing: the far end of a long group is now a stretch for a
+   thumb. Mitigated rather than ignored — Done is pinned to the bottom of the panel where a thumb
+   already is, the panel starts at the top so the first screen needs no reach at all, and the
+   groups that open closed keep the common case short. */
 .sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 21;
-  max-height: 82dvh; overflow-y: auto;
-  background: var(--panel); border-top: 1px solid var(--line);
-  border-radius: 14px 14px 0 0;
-  padding: 0.6rem 1rem max(1rem, env(safe-area-inset-bottom));
+  position: fixed; left: 0; right: 0; top: 0; z-index: 21;
+  max-height: 88dvh; overflow-y: auto;
+  overscroll-behavior: contain;      /* a flick at the end of the list must not scroll the app behind it */
+  background: var(--panel); border-bottom: 1px solid var(--line);
+  border-radius: 0 0 14px 14px;
+  padding: max(0.6rem, env(safe-area-inset-top)) 1rem 0.9rem;
   display: flex; flex-direction: column; gap: 1.1rem;
 }
-.sheet-grip { width: 36px; height: 4px; border-radius: 2px; background: var(--line); margin: 0 auto 0.2rem; }
+/* GONE. It was a bottom sheet's drag handle, drawn at the top edge of the panel — and nothing
+   ever dragged it, it was decoration borrowed from the pattern. On a panel that hangs from the
+   header the top edge is against the screen edge, so the handle now points at nothing. The
+   element stays in the markup (aria-hidden, referenced by nothing) rather than being deleted,
+   because an empty div is cheaper than a diff nobody can review. */
+.sheet-grip { display: none; }
 .sheet h2 { margin: 0; font-size: 1rem; font-weight: 700; }
 .set { display: flex; flex-direction: column; gap: 0.4rem; }
 .set-lab { font-size: 0.8rem; font-weight: 600; }
@@ -667,3 +683,46 @@ input[type="checkbox"].adv-in { width: 22px; height: 22px; justify-self: start; 
 .grp > .set, .grp > ul, .grp > p { padding-left: 0; }
 .grp > .set + .set, .grp > .set + ul, .grp > .set + p, .grp > .set + details { margin-top: 0.9rem; }
 .grp > .adv-h { margin-top: 0.9rem; }
+
+
+/* Done is the way out and it sits where the thumb is, not at the end of a scroll. Sticky rather
+   than fixed: it rides the bottom of the panel while the list scrolls under it, and it is inside
+   the panel so it cannot cover the app behind. */
+#sheetClose {
+  position: sticky; bottom: 0; z-index: 2;
+  margin-top: 0.2rem;
+  box-shadow: 0 -14px 18px -8px var(--panel);
+}
+
+
+/* ── feature reminders ────────────────────────────────────────────────────────────────────
+   Bottom of the stage, above the hint line's place, and NOT A DIALOG: it steals no focus, blocks
+   nothing, and leaves on its own. pointer-events are off on the bar and on the text so a tip
+   lying over the visuals cannot swallow the drag it is telling you about; only the button takes
+   a tap. */
+.tip-bar {
+  /* Positioned against .stagewrap, which is the fullscreen container, so the tip keeps its place
+     at the bottom of the visuals in both states. */
+  position: absolute; inset: auto 0.6rem 0.6rem; z-index: 3;
+  display: flex; align-items: flex-start; gap: 0.6rem;
+  padding: 0.6rem 0.7rem;
+  background: rgba(12, 11, 10, 0.92);
+  border: 1px solid var(--line); border-left: 3px solid var(--hive);
+  border-radius: var(--radius);
+  pointer-events: none;
+  animation: tip-in 0.25s ease-out;
+}
+.tip-text {
+  flex: 1 1 auto; min-width: 0;
+  font-size: 0.78rem; line-height: 1.45; color: var(--text); text-align: left;
+}
+.tip-x {
+  flex: 0 0 auto; pointer-events: auto;
+  min-height: 32px; padding: 0 0.6rem;
+  background: none; color: var(--hive); border: 1px solid var(--line);
+  border-radius: 6px; font: inherit; font-size: 0.74rem; font-weight: 600; cursor: pointer;
+}
+.tip-x:active { color: #131110; background: var(--hive); }
+@keyframes tip-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+/* A phone that asks apps to reduce motion gets the tip without the slide. */
+@media (prefers-reduced-motion: reduce) { .tip-bar { animation: none; } }

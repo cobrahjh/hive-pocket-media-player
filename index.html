@@ -169,6 +169,21 @@
         the sound. Tap them for full screen.</span>
       <span class="stage-tip" id="coverTip" hidden>Tap again to come back</span>
     </button>
+    <!-- A FEATURE REMINDER. A SIBLING of the stage, not a child, and that is not a style choice:
+         #stage IS a <button>, and a <button> inside a <button> is not a thing HTML has. The
+         parser closes the outer one at the inner start tag, so the dismiss button silently never
+         rendered and the stage's own markup was quietly restructured around it. Inside
+         #stageWrap it still travels into full screen, because .stagewrap.cover is what covers
+         the screen.
+
+         pointer-events are off on the bar so it can never swallow the gesture it is describing —
+         only its own button takes a tap. Same rule the tutorial overlay learned in 1.28.0, when
+         it bricked the installed app. -->
+    <div class="tip-bar" id="tipBar" role="status" hidden>
+      <span class="tip-text" id="tipText"></span>
+      <button class="tip-x" id="tipHide" type="button"
+              title="Hide this. Turn reminders off in the menu under Help">Got it</button>
+    </div>
   </div>
 
   <section class="now">
@@ -466,6 +481,15 @@
         <button class="sheet-btn ghost" id="tutAgain" type="button"
                 title="Walk through the app again">Show me around</button>
         <p class="set-note">The seven-step tour. It ran once by itself the first time.</p>
+      </div>
+      <div class="set">
+        <span class="set-lab">Feature reminders</span>
+        <label class="mic-auto" for="tipsOn">
+          <input type="checkbox" id="tipsOn" checked>
+          <span>Show me one now and then<small>One line, once a day at most, never the same one
+            twice. They stop by themselves when there is nothing left to say.</small></span>
+        </label>
+        <p class="set-note" id="tipsNote"></p>
       </div>
       <details class="grp" id="howGrp">
         <summary>How it works</summary>

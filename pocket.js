@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.57.0-beta';
+  const VERSION = '1.58.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -730,6 +730,7 @@
     const el = $('stageHint');
     if (!el) return;
     if (promptWarning) return;      // a system dialog is up; nothing routine outranks that
+    if (tipUp) { setHidden(el, true); return; }   // a reminder is using this space; see hideTip
     if (micLive || current >= 0) { setHidden(el, true); return; }
     setHidden(el, false);
     if (readHidePlayer()) {
@@ -764,6 +765,133 @@
   // they merge what you pass over their defaults, so a call carrying only `ambient` silently
   // resets the burst effect, and a call carrying only `style` silently resets the equalizer's
   // colour. Every setting this app owns goes in every call, to both.
+
+
+  // ── Feature reminders ────────────────────────────────────────────────────────────────────
+  // THE TUTORIAL RUNS ONCE AND THEN NEVER AGAIN, which is right for a tutorial and wrong for the
+  // app: seven steps at the very first opening, before anyone has played anything, is the worst
+  // moment to learn that two fingers send wisps out or that the star is the same setting as On
+  // the stage. Most of what this app can do is discovered by accident or never.
+  //
+  // So: one short line, at most once a day, naming one thing, on a stage that is already open.
+  //
+  // EVERY RULE HERE EXISTS TO STOP IT BECOMING NAGWARE, and each is stated rather than tuned by
+  // feel:
+  //   · ONE A DAY at the most, and one per app opening — TIP_GAP_MS.
+  //   · NEVER TWICE. A tip that has been shown is recorded by id and does not come back, so the
+  //     pool runs out and then it is silent forever. Eleven tips is about a fortnight.
+  //   · NEVER WHILE SOMETHING IS HAPPENING: not during the tutorial, not while the folder
+  //     warning is up, not before the tutorial has ever been seen, not in the first 20 seconds.
+  //   · IT NEVER TAKES A TAP AWAY. pointer-events stay off everywhere except its own dismiss
+  //     button, so a tip lying over the stage cannot swallow the gesture it is describing —
+  //     the same rule the tutorial overlay had to learn in 1.28.0.
+  //   · IT LEAVES ON ITS OWN after TIP_LIFE_MS, and says where to switch it off.
+  //
+  // WHAT STOPS BEING VISIBLE when it is switched off: nothing the app does, only these
+  // sentences. Everything a tip names is also in Settings → Help → How it works.
+  const TIPS_KEY = 'hive-pocket.tips';
+  const TIP_GAP_MS = 20 * 60 * 60 * 1000;   // a day, less four hours, so it is not always the same time of day
+  const TIP_DELAY_MS = 20000;               // let the person look at their own app first
+  const TIP_LIFE_MS = 11000;
+
+  // Each names ONE thing and fits two lines on a phone. Ordered by what a new person is most
+  // likely to be missing rather than by what was hardest to build.
+  const TIPS = [
+    { id: 'mic', text: 'The microphone draws whatever this phone can hear — another app, a speaker, the radio. It is in the menu under Music.' },
+    { id: 'paint', text: 'Drag a finger across the visuals and they paint. It works with no music at all.' },
+    { id: 'full', text: 'Tap the visuals for full screen. Tap again to come back.' },
+    { id: 'wisps', text: 'Two fingers on the visuals send a pair of wisps wandering. Two fingers again sends them away.' },
+    { id: 'look', text: 'A Look sets the equalizer, the bursts, the colours and the background in one tap. Menu → Look.' },
+    { id: 'surprise', text: 'Surprise me rolls a whole new look. It never picks the two that flash.' },
+    { id: 'mini', text: 'The chevron on the player minimizes it and gives the visuals the room. Menu → Screen.' },
+    { id: 'drive', text: 'By default only the bass throws a burst. Menu → Effects → Reacts to lets the voices and cymbals in.' },
+    { id: 'advanced', text: 'Menu → Advanced has the renderers’ own knobs: bands, mirror, motion, attack and twenty more.' },
+    { id: 'offline', text: 'This works with no signal at all. Nothing here reaches the network after it loads.' },
+    { id: 'report', text: 'Something wrong? Menu → Help → Report a problem writes the whole state for you. Nothing sends itself.' },
+  ];
+
+  function readTips() {
+    try {
+      const v = JSON.parse(localStorage.getItem(TIPS_KEY) || '{}');
+      return (v && typeof v === 'object') ? v : {};
+    } catch (e) { return {}; }
+  }
+  function writeTips(v) { try { localStorage.setItem(TIPS_KEY, JSON.stringify(v)); } catch (e) {} }
+  const tipsOn = () => readTips().off !== true;
+  function setTipsOn(on) {
+    const v = readTips();
+    v.off = !on;
+    writeTips(v);
+    if (!on) hideTip();
+    paintTips();
+  }
+  function paintTips() {
+    const c = $('tipsOn');
+    if (c) c.checked = tipsOn();
+    const n = $('tipsNote');
+    if (!n) return;
+    const left = TIPS.filter((t) => (readTips().shown || []).indexOf(t.id) < 0).length;
+    n.textContent = !tipsOn() ? 'Off. Everything they name is in How it works.'
+      : left ? left + ' left. One a day at most, never the same one twice.'
+             : 'All shown. Nothing more will appear.';
+  }
+
+  let tipTimer2 = 0, tipHideTimer = 0;
+  // A LATCH, the same shape as promptWarning. The stage hint and a tip both live at the bottom of
+  // the stage, and the hint is written from half a dozen places — the first cut had the two
+  // drawn on top of each other, both unreadable. The hint is always-on furniture and the tip
+  // arrived a second ago and leaves by itself, so the tip wins for as long as it is up.
+  let tipUp = false;
+
+  function hideTip() {
+    clearTimeout(tipHideTimer);
+    tipUp = false;
+    const el = $('tipBar');
+    if (el) setHidden(el, true);
+    paintStageHint();
+  }
+
+  /** The next unshown tip, or null. Recorded as shown when it is put on screen, not when read. */
+  function nextTip() {
+    const st = readTips();
+    const seen = st.shown || [];
+    return TIPS.find((t) => seen.indexOf(t.id) < 0) || null;
+  }
+
+  function showTip(tip) {
+    const el = $('tipBar'), txt = $('tipText');
+    if (!el || !txt || !tip) return false;
+    txt.textContent = tip.text;
+    tipUp = true;
+    setHidden(el, false);
+    paintStageHint();
+    const st = readTips();
+    st.shown = (st.shown || []).concat([tip.id]);
+    st.last = Date.now();
+    writeTips(st);
+    clearTimeout(tipHideTimer);
+    tipHideTimer = setTimeout(hideTip, TIP_LIFE_MS);
+    paintTips();
+    return true;
+  }
+
+  // Called once on load. Everything that would make a tip an interruption is checked HERE rather
+  // than inside showTip(), so the deliberate path — a test, or a future "show me one now" — can
+  // still put one on screen.
+  function armTips() {
+    clearTimeout(tipTimer2);
+    if (!tipsOn()) return;
+    if (!tutSeen()) return;               // the tutorial is this person's introduction; let it be
+    const st = readTips();
+    if (st.last && Date.now() - st.last < TIP_GAP_MS) return;
+    if (!nextTip()) return;               // the pool is empty: silent from here on
+    tipTimer2 = setTimeout(() => {
+      if (!tipsOn()) return;
+      if (!$('tut').hidden) return;       // the tutorial was started by hand in the meantime
+      if (promptWarning) return;          // a system dialog is coming; nothing routine outranks that
+      showTip(nextTip());
+    }, TIP_DELAY_MS);
+  }
 
   // ── Advanced: the rest of the renderers' knobs ───────────────────────────────────────────
   // THE PATTERN THAT KEEPS RECURRING, for the sixth time. Pocket sent the equalizer exactly two
@@ -2292,6 +2420,7 @@
     $('aboutVer').textContent = 'beta ' + VERSION.replace(/-beta$/, '');
     buildAdvanced();
     paintGroupValues();
+    paintTips();
   }
 
   // A CLOSED GROUP SAYS ITS VALUE. The sheet was rebuilt on 2026-09-13 from loose headings and
@@ -2659,7 +2788,7 @@
     $('tutNext').focus();
   }
 
-  function tutStart() { tutShow(0); }
+  function tutStart() { hideTip(); tutShow(0); }
   function tutEnd() {
     setHidden($('tut'), true);
     setHidden($('tutRing'), true);
@@ -2752,6 +2881,11 @@
   $('tutBack').addEventListener('click', () => tutShow(tutAt - 1));
   $('tutSkip').addEventListener('click', tutEnd);
   $('tutAgain').addEventListener('click', () => { closeSheet(); tutStart(); });
+  $('tipsOn').addEventListener('change', () => setTipsOn($('tipsOn').checked));
+  // Dismissing is not the same as switching them off, and the button does not pretend it is.
+  $('tipHide').addEventListener('click', hideTip);
+  // A tip about a gesture must not still be sitting there while the gesture is being made.
+  $('stage').addEventListener('pointerdown', hideTip, { capture: true });
   // A rotation or a keyboard appearing moves every target. Measured again rather than trusted.
   for (const ev of ['resize', 'orientationchange']) {
     window.addEventListener(ev, () => { if (!$('tut').hidden) tutPlace(); });
@@ -3558,6 +3692,7 @@
     }
   } catch (e) {}
   resumeFolder();
+  armTips();
 
   if (!tutSeen() && !readMicAuto()) {
     requestAnimationFrame(() => setTimeout(tutStart, 180));
@@ -3615,6 +3750,10 @@
       return { w: boltW, h: boltH,
                bw: boltCv ? boltCv.width : 0, bh: boltCv ? boltCv.height : 0, dpr: boltDpr };
     },
+    get tips() { return Object.assign({ on: tipsOn(), pool: TIPS.length }, readTips()); },
+    get tipShowing() { return !isHidden($('tipBar')); },
+    armTips, showTip, hideTip, setTipsOn,
+    get nextTip() { const t = nextTip(); return t ? t.id : null; },
     get advanced() { return readAdv(); },
     advValue,
     setAdv,
