@@ -78,8 +78,9 @@ reduce motion.
 
 Your music never leaves the device. It is not uploaded, copied, or cached by the app. The
 content security policy in `index.html` allows no outside host at all — `frame-src` is `'none'`
-and `connect-src` is `'self'` — and the app makes no network request after it loads. Reporting a
-problem hands the text to your own mail app; nothing is sent from here.
+and `connect-src` is `'self'` plus `https://docs.kinghive.games` — and the app makes no network
+request after it loads except one the person presses: **Send to HIVE** in Report a problem posts the
+report (first 1,000 characters) to HIVE Feedback. Send by email and Copy send nothing from here.
 
 YouTube was removed in 1.18.0. It was the only thing that reached the network, and the only
 source the equalizer and effects could not read — an iframe from another origin, so it played to

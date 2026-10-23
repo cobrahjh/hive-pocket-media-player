@@ -27,7 +27,8 @@
   WHAT THIS IS, AND WHAT IT DELIBERATELY IS NOT.
 
   A phone music player with visuals that depends on NOTHING. No ROCK, no Hive service, no
-  Tailscale, no account, no network after the first load. You pick music that is already on
+  Tailscale, no account, no network after the first load (except "Send to HIVE" in Report a
+  problem, and only when it is pressed). You pick music that is already on
   the device and it plays it, with the equalizer and the effects drawn from that audio.
 
   It is a separate app from the Hive Visuals surfaces served by ROCK, and a separate git
@@ -57,7 +58,7 @@
   CSP is deliberately tight: this app loads nothing from anywhere.
 -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob: https:; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://docs.kinghive.games; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="theme-color" content="#131110">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -560,8 +561,8 @@
           the visuals and this menu, and stops anything playing.</li>
         <li><b>The microphone keeps the screen awake</b> while it listens, so a phone propped up
           does not go dark. It costs about 12% of a battery an hour, screen and all.</li>
-        <li><b>Report a problem</b> — in this menu. Write what happened and press Send by email.
-          Your mail app opens with everything filled in and you press send there. Your song names
+        <li><b>Report a problem</b> — in this menu. Write what happened and press Send to HIVE (or Send by email).
+          Send to HIVE sends it at once; by email, your mail app opens with it filled in. Your song names
           are never included, and you can read exactly what is attached first.</li>
         <li><b>It all works with no internet</b>, every time you open it.</li>
         <li><b>Browsers</b> — everything works in Chrome, Firefox and Safari. Only remembering a
@@ -584,14 +585,18 @@
           <p class="set-note" id="reportNote">Kept on this phone as you type.</p>
         </div>
         <div class="set">
-          <button class="sheet-btn" id="reportSend" type="button"
-                  title="Open your mail app with the report ready to send">Send by email</button>
+          <button class="sheet-btn" id="reportHive" type="button"
+                  title="Send this report to HIVE Feedback now">Send to HIVE</button>
+          <button class="sheet-btn ghost" id="reportSend" type="button"
+                  title="Open your mail app with the report ready to send"
+                  style="margin-top:0.5rem">Send by email</button>
           <button class="sheet-btn ghost" id="reportCopy" type="button"
                   title="Copy the whole report"
                   style="margin-top:0.5rem">Copy instead</button>
           <p class="set-note" id="reportSaid" hidden></p>
-          <p class="set-note">Nothing is sent until you press send in your mail app. Copy is for a
-            phone with no mail app.</p>
+          <p class="set-note">Send to HIVE sends it straight away (up to 1,000 characters). Email
+            sends nothing until you press send in your mail app. Copy is for a phone with no mail
+            app.</p>
         </div>
         <details class="grp" id="diagGrp">
           <summary>Exactly what gets attached</summary>

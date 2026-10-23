@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.68.0-beta';
+  const VERSION = '1.69.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -2635,11 +2635,12 @@
   // saying so is usually not the person who can read a console. So the app assembles the report
   // itself: what they typed, plus the state that actually explains a bug on a phone.
   //
-  // NOTHING IS SENT FROM HERE. mailto: hands the text to whatever mail app the phone uses and
-  // that app sends it, after the person presses send in it — so the app keeps the property it
-  // gained when YouTube went: it never opens a connection itself. Copy is the fallback for a
-  // phone with no mail app configured, which is common enough to need a real answer rather than
-  // a button that silently does nothing.
+  // THREE WAYS OUT, ALL BY A PRESS. "Send to HIVE" (1.69.0, Harold's call: every Hive app's reports
+  // land in one list, HIVE Feedback) posts the report to the public docs address — the ONE network
+  // request this app makes after loading, and only when that button is pressed. mailto: hands the
+  // text to the phone's mail app, which sends it when the person presses send there. Copy is the
+  // fallback for a phone with no mail app configured, which is common enough to need a real answer
+  // rather than a button that silently does nothing.
   //
   // WHAT IS DELIBERATELY NOT IN A REPORT: the names of their music, their saved link addresses,
   // and what is playing. A bug report is not a reason to hand over a library, and a diagnostic
@@ -2794,6 +2795,36 @@
              + (trimmed ? ' What you wrote was long, so the email carries the start of it and '
                         + 'says where it was cut — Copy has no limit.' : ''),
              trimmed);
+  }
+
+  // HIVE Feedback keeps up to 1,000 characters, so a long report is cut there and says so; email
+  // and Copy still carry the whole thing. What was typed comes first, so it is what survives.
+  const HIVE_FEEDBACK = 'https://docs.kinghive.games/api/feedback';
+  const HIVE_MAX = 1000;
+  let hiveSending = false;
+  function sendToHive() {
+    if (hiveSending) return;
+    if (!($('reportText').value || '').trim()) { reportSaid('Write what happened first.', true); $('reportText').focus(); return; }
+    let text = reportBody();
+    const cut = text.length > HIVE_MAX;
+    if (cut) text = text.slice(0, HIVE_MAX - 16) + '\n[...cut here]';
+    hiveSending = true;
+    $('reportHive').disabled = true;
+    reportSaid('Sending…');
+    fetch(HIVE_FEEDBACK, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'omit',
+      body: JSON.stringify({ app: 'hive-pocket', kind: 'bug', page: '/', text: text }),
+    }).then((r) => {
+      if (r.ok) {
+        reportSaid('Sent to HIVE. Thank you.' + (cut ? ' It was long, so the start of it went; '
+          + 'Send by email carries all of it.' : ''));
+        return;
+      }
+      reportSaid(r.status === 429 ? 'Lots of reports just now. Try again in a few minutes, or send by email.'
+        : 'That did not go through. Send by email instead.', true);
+    }).catch(() => {
+      reportSaid('That did not go through — this phone may be offline. Send by email instead.', true);
+    }).then(() => { hiveSending = false; $('reportHive').disabled = false; });
   }
 
   async function copyReport() {
@@ -3175,6 +3206,7 @@
   $('folderForget').addEventListener('click', forgetFolder);
   $('reconnectBtn').addEventListener('click', () => reconnectFolder({ play: true }));
 
+  $('reportHive').addEventListener('click', sendToHive);
   $('reportSend').addEventListener('click', sendReport);
   $('reportCopy').addEventListener('click', copyReport);
   $('reportGrp').addEventListener('toggle', () => { if ($('reportGrp').open) paintDiag(); });
