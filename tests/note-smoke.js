@@ -10,6 +10,8 @@
  *   3. Play pressed after "five tracks stopped" -> the stop notice stayed up over the music
  *   4. Play pressed after "End of the queue."   -> the same
  *
+ * Since 1.75.0, a track that ENDS no longer walks onto a row that cannot play (case 7).
+ *
  * And since 1.73.0 one place where the line was merely SILENT: the press that stops the
  * microphone, with music waiting, now says that the next press plays it.
  *
@@ -177,6 +179,95 @@ async function runOut(app) {
   await press(lost, 'playBtn');
   check('and rows nothing can unlock get no such hint either', lost.pocket.micLive === false
     && !/Press play for your music/.test(note(lost)), note(lost));
+
+  // ── 7. the queue runs onto a row that cannot play ───────────────────────────────────────
+  // A kept YouTube link sits in the queue and explains itself when pressed. When a track simply
+  // ENDED and that row was next, the app "played" it: the sound stopped, mid-queue, for good.
+  const YT = { name: 'a video', url: 'https://www.youtube.com/watch?v=abc' };
+  const OK = { name: 'a song', url: 'https://ok.example/a.mp3' };
+  const through = boot({ src: SRC, store: new Map([['hive-pocket.links', JSON.stringify([YT, OK])]]) });
+  pickMany(through, 2);                       // track0, track1, a video (dead), a song
+  await settle();
+  await press(through, 'playBtn');
+  await press(through, 'nextBtn');
+  check('playing the row before the dead one', through.els('nowTitle').textContent === 'track1'
+    && playing(through).length === 1, through.els('nowTitle').textContent);
+  await runOut(through);
+  check('A TRACK THAT ENDS STEPS OVER THE ROW THAT CANNOT PLAY', playing(through).length === 1
+    && through.els('nowTitle').textContent === 'a song',
+    through.els('nowTitle').textContent + ', ' + playing(through).length + ' playing: ' + note(through));
+  // The button is different: pressing your way onto the row is asking what it is.
+  await press(through, 'prevBtn');
+  check('the Previous button still lands on it and says why', /YouTube links cannot play here/.test(note(through)),
+    note(through));
+
+  // Nothing but dead rows after the last track: that is the end of the queue, said as such,
+  // with the title still the track that played.
+  const tail = boot({ src: SRC, store: new Map([['hive-pocket.links', JSON.stringify([YT])]]) });
+  pickMany(tail, 2);
+  await settle();
+  await press(tail, 'playBtn');
+  await press(tail, 'nextBtn');
+  await runOut(tail);
+  check('dead rows at the end are the end of the queue', playing(tail).length === 0
+    && note(tail) === 'End of the queue.' && tail.els('nowTitle').textContent === 'track1',
+    tail.els('nowTitle').textContent + ': ' + note(tail));
+  await press(tail, 'nextBtn');
+  check('and the Next button there still shows the row', /YouTube links cannot play here/.test(note(tail)), note(tail));
+
+  // Repeat all: round past the dead row to the top.
+  const round = boot({ src: SRC, store: new Map([['hive-pocket.links', JSON.stringify([YT])]]) });
+  pickMany(round, 2);
+  await settle();
+  await press(round, 'repeatBtn');             // off -> all
+  await press(round, 'playBtn');
+  await press(round, 'nextBtn');
+  await runOut(round);
+  check('with repeat all it goes round past the dead row', playing(round).length === 1
+    && round.els('nowTitle').textContent === 'track0',
+    round.pocket.repeatMode + ': ' + round.els('nowTitle').textContent + ', ' + note(round));
+
+  // Shuffle: whatever order it draws, a track that ends never leaves the music on the dead row.
+  // Fresh boots, four endings each: in this stub a track "ends" the instant it starts, and five
+  // of those in a row is the app's own limit for giving up (RAN_OUT_NOTE), which is not this.
+  let stranded = 0;
+  for (let b = 0; b < 6; b++) {
+    const mix = boot({ src: SRC, store: new Map([['hive-pocket.links', JSON.stringify([YT])]]) });
+    pickMany(mix, 3);
+    await settle();
+    await press(mix, 'shuffleBtn');
+    await press(mix, 'repeatBtn');
+    await press(mix, 'playBtn');
+    for (let i = 0; i < 4; i++) { await runOut(mix); if (playing(mix).length !== 1) stranded++; }
+  }
+  check('shuffled, twenty-four tracks ending never strand it on the dead row', stranded === 0, stranded + ' of 24');
+
+  // One track that plays among three that cannot, shuffled, repeat all: whatever order is drawn
+  // it must come round to that one track again and never call it the end of the queue.
+  let lostIt = 0;
+  for (let b = 0; b < 12; b++) {
+    const lone = boot({ src: SRC, store: new Map([['hive-pocket.links', JSON.stringify([YT,
+      { name: 'two', url: 'https://youtu.be/two' }, { name: 'three', url: 'https://youtu.be/three' }])]]) });
+    pickMany(lone, 1);
+    await settle();
+    await press(lone, 'shuffleBtn');
+    await press(lone, 'repeatBtn');
+    await press(lone, 'playBtn');
+    for (let i = 0; i < 3; i++) { await runOut(lone); if (playing(lone).length !== 1) lostIt++; }
+  }
+  check('one playable track among dead rows keeps coming round, shuffled', lostIt === 0, lostIt + ' of 36');
+
+  // A FILE that will not play is skipped automatically too, and that skip must not land on the
+  // dead row either.
+  const broke = boot({ src: SRC, store: new Map([['hive-pocket.links', JSON.stringify([YT, OK])]]) });
+  pickMany(broke, 2);
+  await settle();
+  await press(broke, 'playBtn');
+  await press(broke, 'nextBtn');
+  fire(playing(broke)[0], 'error');
+  await rest();
+  check('a file that fails skips past the dead row as well', playing(broke).length === 1
+    && broke.els('nowTitle').textContent === 'a song', broke.els('nowTitle').textContent + ': ' + note(broke));
 
   t.report();
 })();

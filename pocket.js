@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.74.0-beta';
+  const VERSION = '1.75.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1774,7 +1774,7 @@
       $('nowSub').textContent = t && t.link
         ? 'That link would not play. It has to point straight at an audio file.'
         : 'That file would not play — skipping.';
-      if (!t || !t.link) next();
+      if (!t || !t.link) next(false, true);
     });
     return el;
   }
@@ -1953,25 +1953,41 @@
   }
   // fromEnd: a track that ran out, as opposed to the button. Only the former stops at the end
   // of the queue — pressing Next at the last track wrapping is what people expect.
-  function next(fromEnd) {
+  //
+  // auto: nobody pressed anything - the track ran out, or a file would not play and is being
+  // skipped. An automatic step PASSES OVER ROWS THAT CANNOT PLAY (a kept YouTube link). It used
+  // to land on one, which stops the sound and writes that row's explanation: the music ended
+  // for good in the middle of the queue, on a row nobody chose. The Next button still lands on
+  // such a row, because pressing your way to it is asking what it is.
+  function next(fromEnd, auto) {
     if (!queue.length) return;
     if (fromEnd && repeatMode === 'one') { play(current); return; }
-    if (shuffleOn) {
-      if (!order || order.length !== queue.length) buildOrder();
-      orderPos++;
-      if (orderPos >= order.length) {
-        if (fromEnd && repeatMode === 'off') { stopHere(); return; }
-        buildOrder(); orderPos = 0;
+    const skip = (i) => (fromEnd || auto) && queue[i] && queue[i].dead;
+    // A track that just ended is itself a row that plays, so the walk always finds one; the
+    // count is there so that a mistake about that cannot spin for ever. TWICE the queue, not
+    // once: shuffled, the walk can use up the rest of one order and then need the whole of the
+    // next to reach the only row that plays. Once was a bound it could run out of, and then
+    // repeat-all said "End of the queue."
+    let n = current;
+    for (let hops = 0; hops < queue.length * 2; hops++) {
+      if (shuffleOn) {
+        if (!order || order.length !== queue.length) buildOrder();
+        orderPos++;
+        if (orderPos >= order.length) {
+          if (fromEnd && repeatMode === 'off') { stopHere(); return; }
+          buildOrder(); orderPos = 0;
+        }
+        n = order[orderPos];
+      } else {
+        n++;
+        if (n >= queue.length) {
+          if (fromEnd && repeatMode === 'off') { stopHere(); return; }
+          n = 0;
+        }
       }
-      play(order[orderPos]);
-      return;
+      if (!skip(n)) { play(n); return; }
     }
-    const n = current + 1;
-    if (n >= queue.length) {
-      if (fromEnd && repeatMode === 'off') { stopHere(); return; }
-      play(0); return;
-    }
-    play(n);
+    stopHere();
   }
   // The queue ran out and nothing says to carry on. Stop where it is rather than looping
   // silently back to the top, which is how a player ends up playing all night.
