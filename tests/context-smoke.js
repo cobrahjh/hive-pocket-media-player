@@ -336,5 +336,35 @@ async function started(opts) {
   check('a refused play is counted as refused', /asked 1, started 0, refused 1, last refused/.test(line(refused, 'play calls')),
     line(refused, 'play calls'));
 
+  // ── 10. a check still waiting when the app goes away again ───────────────────────────────
+  // Its timer would fire the moment the app is back, with no time given for the clock to move.
+  // Real timers throughout: the point is WHEN the check runs.
+  const goAway = (app) => { app.doc.visibilityState = 'hidden'; app.doc_fire('visibilitychange'); };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const real = async () => { const a = boot({ src: SRC }); pick(a); await settle(); await press(a, 'playBtn'); return a; };
+
+  const leftApp = await real();
+  comeBack(leftApp);                                     // the check is armed: due at 1.5 s
+  await wait(1000);
+  goAway(leftApp);
+  comeBack(leftApp);                                     // back again: a NEW second and a half starts
+  await wait(800);                                    // 1.8 s after the first, 0.8 s after the second
+  check('A CHECK ARMED BEFORE THE APP WENT AWAY DOES NOT FIRE ON THE OLD CLOCK', playing(leftApp).length === 1
+    && line(leftApp, 'stuck tracks paused on return') === 'stuck tracks paused on return: 0', note(leftApp));
+  await wait(1000);
+  check('and the fresh one still catches a track that really is stuck', playing(leftApp).length === 0
+    && /Sound was interrupted/.test(note(leftApp)), note(leftApp));
+
+  // Frozen with a check waiting, and never shown again: nothing fires, nothing is paused.
+  const iced = await real();
+  comeBack(iced);
+  iced.doc_fire('freeze');
+  await wait(1700);
+  check('a page frozen with a check waiting pauses nothing', playing(iced).length === 1 && note(iced) === 'From this device', note(iced));
+  iced.doc_fire('resume');                          // thawed: sampled afresh
+  await wait(1700);
+  check('and thawing it checks again', playing(iced).length === 0 && /Sound was interrupted/.test(note(iced))
+    && /frozen 1, thawed 1/.test(line(iced, 'page open for')), note(iced) + ' | ' + line(iced, 'page open for'));
+
   t.report();
 })();

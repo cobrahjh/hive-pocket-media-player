@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.78.0-beta';
+  const VERSION = '1.79.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1333,7 +1333,11 @@
       paintPlay();
     }, STALL_MS);
   }
-  document.addEventListener('freeze', () => { lifeLog.froze++; });
+  // A check that was still waiting when the app went away is dropped. Its timer would fire the
+  // moment the app is back, having given the track no time to move, and pause one that was fine.
+  // Coming back takes a fresh sample (onReturn is called again), so nothing is lost by it.
+  function dropStallCheck() { clearTimeout(stallTimer); stallTimer = 0; }
+  document.addEventListener('freeze', () => { lifeLog.froze++; dropStallCheck(); });
   document.addEventListener('resume', () => { lifeLog.resumed++; onReturn('thawed'); });
   window.addEventListener('pageshow', (ev) => { if (ev && ev.persisted) { lifeLog.fromCache++; onReturn('from cache'); } });
 
@@ -1395,6 +1399,7 @@
   document.addEventListener('visibilitychange', () => {
     // FIRST, and it cannot throw: what the app came back to, before the lines below change it.
     if (document.visibilityState === 'visible') onReturn('shown');
+    else dropStallCheck();                 // not every phone sends 'freeze'
     if (document.visibilityState === 'visible' && micLive) keepAwake(true);
     // Coming back to the app is the likeliest moment to find the context left down.
     if (document.visibilityState === 'visible') watchCtx();
