@@ -135,7 +135,28 @@ const press = async (app, id) => { fire(app.els(id), 'click'); await rest(); };
   check('and the note says the link would not play', /That link would not play/.test(dead.els('nowSub').textContent),
     dead.els('nowSub').textContent);
 
-  // ── 6. this suite must be able to fail ───────────────────────────────────────────────────
+  await press(dead, 'nextBtn');
+  check('so the next try asks for CORS again - two more, not one', dead.playCalls() === 4,
+    String(dead.playCalls()) + ' - a link that is offline or gone must not lose its visuals for the visit');
+
+  // ── 6. a refused link is remembered, so it is not refused again every time ───────────────
+  // Repeat-one, shuffle, or pressing the row again each went back through the CORS request,
+  // which fails first: a wasted request and a gap of silence on every pass.
+  const again = boot({ src: SRC, store: saved(QUIET), noCorsHosts: ['nocors.example'] });
+  await press(again, 'playBtn');
+  check('the first play costs two attempts', again.playCalls() === 2, String(again.playCalls()));
+  await press(again, 'nextBtn');
+  now = playing(again);
+  check('THE SECOND PLAY COSTS ONE - it goes straight to the plain element', again.playCalls() === 3,
+    String(again.playCalls()));
+  check('and it is playing, outside the graph, with the note',
+    now.length === 1 && now[0].src === QUIET && again.routed.indexOf(now[0]) < 0
+    && /no visuals/.test(again.els('nowSub').textContent), again.els('nowSub').textContent);
+  check('nothing about it was written to storage',
+    again.store.get('hive-pocket.links') === JSON.stringify([{ name: 'a song', url: QUIET }]),
+    String(again.store.get('hive-pocket.links')));
+
+  // ── 7. this suite must be able to fail ───────────────────────────────────────────────────
   // Hand the plain element to the graph again and require case 1's central check to collapse.
   if (!process.env.POCKET_SRC) {
     const brokenSrc = SRC.replace('(audio === plainAudio ? ensureCtx() : ensureGraph(audio))',

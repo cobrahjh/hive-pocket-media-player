@@ -233,6 +233,8 @@ function shown(e) { return !(e && e.attrs && 'hidden' in e.attrs); }
  *   opts.noCorsHosts    hostnames that refuse a CORS request: a play() with crossOrigin set fires
  *                       `error` and then rejects, as a real load does; without it, it plays
  *   opts.deadHosts      hostnames whose audio never loads at all, with or without CORS
+ *   opts.slowPlay       play() never settles by itself, like a track still loading; pause() or
+ *                       load() then rejects it with an error named AbortError
  *   opts.blockPlainPlay refuse, once, the play() of a link made without a CORS request
  *   opts.noFullscreen   no requestFullscreen on the element, as on a browser that lacks it
  *   opts.refuseFullscreen  the API exists and rejects, which is what a browser does when it
@@ -304,14 +306,23 @@ function boot(opts) {
       }
       m.paused = false;
       fire(m, 'play');
+      // A load that takes a while: the element is no longer paused, the promise has not settled.
+      // pause() or load() before it does rejects it with AbortError, as the real one does.
+      if (o.slowPlay) return new Promise((res, rej) => { m.pendingPlay = rej; });
       return Promise.resolve();
+    };
+    const abortPending = () => {
+      if (!m.pendingPlay) return;
+      const rej = m.pendingPlay; m.pendingPlay = null;
+      const e = new Error('The play() request was interrupted'); e.name = 'AbortError'; rej(e);
     };
     m.pause = () => {
       const was = m.paused;
       m.paused = true;
+      abortPending();
       if (!was) fire(m, 'pause');
     };
-    m.load = () => { m.paused = true; m.currentTime = 0; };
+    m.load = () => { m.paused = true; m.currentTime = 0; abortPending(); };
     medias.push(m);
     return m;
   }

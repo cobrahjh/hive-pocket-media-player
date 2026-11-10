@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.70.0-beta';
+  const VERSION = '1.71.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1622,6 +1622,14 @@
   // to createMediaElementSource. `audio` is whichever of the two is in use; teardown() runs
   // before any switch, so only one of them ever holds a src.
   let routedAudio = null, plainAudio = null, playSeq = 0;
+  // THE NOTES THAT SAY "IT STOPPED", each of which is followed by somebody pressing play. Once
+  // that play has really begun they are no longer true, and started() takes them down. Only
+  // "tap play" used to be, so the other two went on announcing a stop over music that was
+  // playing. Listed, not "any note at all": the one about visuals failing must survive a resume.
+  const RAN_OUT_NOTE = 'Five tracks in a row stopped the moment they started, so it '
+    + 'stopped here too. Press play to carry on anyway.';
+  const END_NOTE = 'End of the queue.';
+  const STOPPED_NOTES = [TAP_NOTE, RAN_OUT_NOTE, END_NOTE];
   const NO_VISUALS_NOTE = 'Playing, but no visuals — that site will not let this app read the sound.';
 
   // What the line under the title says while a track plays. A link is not "from this device".
@@ -1656,8 +1664,7 @@
       failRun++;
       if (failRun >= MAX_FAIL_RUN) {
         failRun = 0;
-        $('nowSub').textContent = 'Five tracks in a row stopped the moment they started, so it '
-          + 'stopped here too. Press play to carry on anyway.';
+        $('nowSub').textContent = RAN_OUT_NOTE;
         paintPlay();
         return;
       }
@@ -1730,6 +1737,10 @@
     // says so rather than failing as a silent dead track — a row that does nothing and explains
     // nothing is the worst of the three options.
     if (t.dead) {
+      // Whatever was playing stops, as it does for any other row that is pressed. It did not:
+      // the old track carried on under this row's title, with a note saying nothing could play.
+      teardown();
+      playSeq++;
       current = i;
       $('nowTitle').textContent = t.name;
       $('nowSub').textContent = 'YouTube links cannot play here. Remove it from the list, or '
@@ -1740,7 +1751,15 @@
     // Unload whichever element was in use BEFORE choosing the one for this track, so the two
     // can never sound at once. Only a link already refused by its host goes to the plain one.
     teardown();
-    const el = ensureAudio(!!(t.link && opts && opts.noCors));
+    // A refused link is REMEMBERED (t.noCors, set in started() once the retry has really played)
+    // so that playing it again, on repeat or from the row, does not ask for CORS and fail first
+    // every time: one wasted request and a gap of silence per pass. For this visit only, and it
+    // is never written to storage. THE COST: a host that starts granting CORS while the app is
+    // open keeps its link without visuals until the app is opened again. So does a link whose
+    // CORS attempt failed for some other reason and then played without it — the app cannot
+    // tell those apart, only that asking failed and not asking worked.
+    const plain = !!(t.link && (t.noCors || (opts && opts.noCors)));
+    const el = ensureAudio(plain);
     current = i;
     // CROSS-ORIGIN AUDIO AND THE ANALYSER. A media element loaded from another origin without
     // CORS permission is opaque: it plays, but Web Audio refuses to let this page read it and
@@ -1748,9 +1767,9 @@
     // CORS is the only way to get them — and asking fails outright on a host that does not
     // grant it, which is why the error handler below retries once WITHOUT it. Sound first,
     // visuals if the host allows them.
-    if (t.link && !(opts && opts.noCors)) el.crossOrigin = 'anonymous';
+    if (t.link && !plain) el.crossOrigin = 'anonymous';
     else el.removeAttribute('crossorigin');
-    el.corsTried = !!(t.link && !(opts && opts.noCors));
+    el.corsTried = !!(t.link && !plain);
     el.src = t.url;
     if (!t.link) writeLastTrack(t.name);
     $('nowTitle').textContent = t.name;
@@ -1767,8 +1786,11 @@
     // already begun on the other element — and "tap play to start" would be written over a
     // track that is starting. The same happened to any track skipped while it was loading.
     const seq = ++playSeq;
-    el.play().then(started, () => {
+    el.play().then(started, (e) => {
       if (seq !== playSeq) return;
+      // Paused while it was still loading: the browser rejects that play() with AbortError.
+      // Nobody refused anything, so there is no tap to ask for.
+      if (e && e.name === 'AbortError') return;
       $('nowSub').textContent = TAP_NOTE;
       paintPlay();
     });
@@ -1802,7 +1824,11 @@
     }
     // The tap happened. Leave any other note alone — a link playing without visuals has its
     // own, and that one is still true.
-    if ($('nowSub').textContent === TAP_NOTE) $('nowSub').textContent = sourceNote(queue[current]);
+    // Playing on the plain element is taken as the sign that asking for CORS was the problem —
+    // a link that is merely offline or gone fails there too and never gets this far. See play().
+    const row = queue[current];
+    if (row && row.link && audio === plainAudio) row.noCors = true;
+    if (STOPPED_NOTES.indexOf($('nowSub').textContent) >= 0) $('nowSub').textContent = sourceNote(row);
     if (visualsFailed) {
       $('nowSub').textContent = 'Playing, but the visuals would not start on this phone. The '
         + 'sound is fine.';
@@ -1813,6 +1839,10 @@
   function toggle() {
     // Matches the icon exactly: whatever the pause bars are showing for is what stops.
     if (micLive && !(audio && !audio.paused)) { micStop(); return; }
+    // A row that cannot play has nothing loaded. Say why again rather than do nothing — and
+    // BEFORE the line below, which would otherwise start the first track instead when the dead
+    // row was the first thing ever pressed and no audio element exists yet.
+    if (current >= 0 && queue[current] && queue[current].dead) { play(current); return; }
     if (!audio || current < 0) { if (queue.length) play(0); return; }
     // .then(started, onRefused) and NOT .then(started).catch(onRefused). The two read the same
     // and are not: a trailing .catch also catches whatever `started` throws, so a renderer that
@@ -1848,7 +1878,7 @@
   // silently back to the top, which is how a player ends up playing all night.
   function stopHere() {
     if (audio) audio.pause();
-    $('nowSub').textContent = 'End of the queue.';
+    $('nowSub').textContent = END_NOTE;
     paintPlay();
   }
   function prev() {
