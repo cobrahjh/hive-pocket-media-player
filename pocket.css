@@ -395,7 +395,13 @@ a.sheet-btn {
    negotiate it — the whole point of that rule is the moments when a phone is awkward to hold. */
 @media (orientation: landscape) and (max-height: 480px) {
   .app { gap: 0.4rem; padding-left: 0.5rem; padding-right: 0.5rem; }
-  .now-sub { display: none; }
+  /* OUT OF SIGHT, NOT display:none. This line is the live region a screen reader hears the
+     app's notices through, and a region that is not displayed announces nothing. The same
+     clip as .visually-hidden. */
+  .now-sub {
+    position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+    clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden;
+  }
   .scrub { margin-top: 0.25rem; }
   .queue-head { display: none; }
 }
@@ -585,8 +591,13 @@ a.sheet-btn {
 .now-title { padding-right: 38px; }
 
 body.player-mini .queue-wrap,
-body.player-mini .now-sub,
 body.player-mini .scrub { display: none; }
+/* Clipped rather than removed, for the same reason as in short landscape above: it must
+   still be there for a screen reader to hear. */
+body.player-mini .now-sub {
+  position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0;
+  clip: rect(0 0 0 0); clip-path: inset(50%); overflow: hidden;
+}
 /* Tighter, because the section is now one line and a button rather than four rows. */
 body.player-mini .now { margin-bottom: 0.1rem; }
 body.player-mini .controls { margin-top: 0.35rem; }

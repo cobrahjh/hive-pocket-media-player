@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.73.0-beta';
+  const VERSION = '1.74.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1697,7 +1697,9 @@
   const END_NOTE = 'End of the queue.';
   const MIC_STOPPED_NOTE = 'Stopped listening. Press play for your music.';
   const STOPPED_NOTES = [TAP_NOTE, RAN_OUT_NOTE, END_NOTE, INTERRUPTED_NOTE];
-  const NO_VISUALS_NOTE = 'Playing, but no visuals — that site will not let this app read the sound.';
+  // Short enough to sit on the line whole at 360px. The longer wording explained more and ran
+  // to a third line, which the two-line clamp cut off.
+  const NO_VISUALS_NOTE = 'Playing, but no visuals. That site blocks them.';
 
   // What the line under the title says while a track plays. A link is not "from this device".
   function sourceNote(t) {

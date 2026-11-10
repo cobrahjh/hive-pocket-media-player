@@ -148,6 +148,23 @@ function seenStore(extra) {
   check('without it nothing remembers when the last one was',
     !broken.pocket.tips.last, JSON.stringify(broken.pocket.tips));
 
+  // THE LINE UNDER THE TITLE IS WHERE THE APP EXPLAINS ITSELF - why a link will not play, why
+  // the sound stopped. It is written with textContent, which a screen reader does not notice
+  // unless the element is a live region. Until 1.74.0 it was not, so none of it was spoken.
+  const sub = /<[^>]*id="nowSub"[^>]*>/.exec(html);
+  check('the status line is announced to a screen reader', !!sub && /role="status"/.test(sub[0]),
+    sub ? sub[0] : 'no #nowSub in index.html');
+  // A live region that is display:none says nothing. Two layouts hide this line; they must
+  // clip it out of sight instead, or the notices go silent exactly there.
+  const gone = css.replace(/\/\*[\s\S]*?\*\//g, '').split('}').filter((r) => /\.now-sub\b[^{]*\{[^{]*$/.test(r) && /display:\s*none/.test(r));
+  check('no layout hides the status line with display:none', gone.length === 0, gone.join(' | ').replace(/\s+/g, ' '));
+  // And the one note that was too long for it. Two lines at 360px is about a hundred
+  // characters of this font; sixty leaves room for a larger text setting.
+  const js = fs.readFileSync(path.join(__dirname, '..', 'pocket.js'), 'utf8');
+  const nv = /const NO_VISUALS_NOTE = '([^']*)';/.exec(js);
+  check('the no-visuals note is short enough to be read whole', !!nv && nv[1].length <= 60
+    && /no visuals/.test(nv[1]), nv ? nv[1].length + ' characters: ' + nv[1] : 'constant not found');
+
   t.report();
 
   function TIP_IDS() {
