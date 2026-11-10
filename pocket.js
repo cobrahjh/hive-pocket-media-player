@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.69.0-beta';
+  const VERSION = '1.70.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1606,23 +1606,51 @@
     if (!audio) return;
     try { audio.pause(); } catch (e) { /* already gone */ }
     // NOT removeChild + new element: a second createMediaElementSource on a NEW element would
-    // be fine, but the old node would keep the graph alive. One element for the app's life.
+    // be fine, but the old node would keep the graph alive. Each element is kept for the app's
+    // life and only ever unloaded.
     audio.removeAttribute('src');
     audio.load();
   }
 
-  function ensureAudio() {
-    if (audio) return audio;
-    audio = document.createElement('audio');
-    audio.preload = 'metadata';
-    $('audioHost').appendChild(audio);
-    audio.addEventListener('timeupdate', paintTime);
-    audio.addEventListener('durationchange', paintTime);
+  // TWO ELEMENTS, AND THE SECOND EXISTS FOR ONE CASE: a link whose host refused the CORS request.
+  // Dropping the request was never enough. The one element this app had was already wired
+  // MediaElementSource -> analyser -> destination, and Web Audio hands back ZEROES for media it
+  // was not given permission to read — so the retry "played" with the timer running and nothing
+  // at the speakers, and the note on screen said the sound was fine. A MediaElementSource cannot
+  // be unbound from its element, so the only way out of the graph is an element that was never
+  // put in it. plainAudio is that element: it goes straight to the speakers and is never passed
+  // to createMediaElementSource. `audio` is whichever of the two is in use; teardown() runs
+  // before any switch, so only one of them ever holds a src.
+  let routedAudio = null, plainAudio = null, playSeq = 0;
+  const NO_VISUALS_NOTE = 'Playing, but no visuals — that site will not let this app read the sound.';
+
+  // What the line under the title says while a track plays. A link is not "from this device".
+  function sourceNote(t) {
+    if (audio && audio === plainAudio) return NO_VISUALS_NOTE;
+    return t && t.link ? 'From a saved link' : 'From this device';
+  }
+
+  function ensureAudio(plain) {
+    const have = plain ? plainAudio : routedAudio;
+    if (have) { audio = have; return have; }
+    const el = document.createElement('audio');
+    el.preload = 'metadata';
+    $('audioHost').appendChild(el);
+    if (plain) plainAudio = el; else routedAudio = el;
+    audio = el;
+    el.addEventListener('timeupdate', paintTime);
+    el.addEventListener('durationchange', paintTime);
     // NOT a place to clear failRun: this fires for a track that is about to end instantly too,
     // which would reset the count on exactly the case the count exists for.
-    audio.addEventListener('play', () => { playStartedAt = performance.now(); paintPlay(); startPump(); });
-    audio.addEventListener('pause', () => { paintPlay(); });
-    audio.addEventListener('ended', () => {
+    // Each of the three below ignores the element that is NOT in use: a late event from the one
+    // just torn down must not skip a track or restart the clock on the one now playing.
+    el.addEventListener('play', () => {
+      if (el !== audio) return;
+      playStartedAt = performance.now(); paintPlay(); startPump();
+    });
+    el.addEventListener('pause', () => { paintPlay(); });
+    el.addEventListener('ended', () => {
+      if (el !== audio) return;
       const lasted = playStartedAt ? performance.now() - playStartedAt : 0;
       if (lasted >= MIN_REAL_PLAY_MS) { failRun = 0; next(true); return; }
       failRun++;
@@ -1635,15 +1663,20 @@
       }
       next(true);
     });
-    audio.addEventListener('error', () => {
+    el.addEventListener('error', () => {
+      if (el !== audio) return;
       const t = queue[current];
       // A link that refused the CORS request: drop the request and take the audio without
-      // visuals, rather than skipping a track that would have played perfectly well.
-      if (t && t.link && audio.corsTried) {
-        $('nowSub').textContent = 'Playing, but no visuals — that site will not let this app read the sound.';
+      // visuals, rather than skipping a track that would have played perfectly well. play()
+      // moves it to the element that is outside the graph and writes the note that says so.
+      if (t && t.link && el.corsTried) {
         play(current, { noCors: true });
         return;
       }
+      // This load FAILED, and its play() promise is about to reject because of it. That is not
+      // a phone asking for a tap, so the rejection must not write "tap play" over the reason
+      // given below — which it did, for every link that would not play at all.
+      playSeq++;
       // A BOUND ON SKIPPING, and lazy loading is what made it matter. One unplayable file has
       // always skipped to the next, which is right; a whole folder of them sprinted silently
       // through every track in the queue, and now each of those skips also reads a file off the
@@ -1663,7 +1696,7 @@
         : 'That file would not play — skipping.';
       if (!t || !t.link) next();
     });
-    return audio;
+    return el;
   }
 
   function play(i, opts) {
@@ -1704,8 +1737,10 @@
       renderQueue(); paintPlay();
       return;
     }
-    const el = ensureAudio();
+    // Unload whichever element was in use BEFORE choosing the one for this track, so the two
+    // can never sound at once. Only a link already refused by its host goes to the plain one.
     teardown();
+    const el = ensureAudio(!!(t.link && opts && opts.noCors));
     current = i;
     // CROSS-ORIGIN AUDIO AND THE ANALYSER. A media element loaded from another origin without
     // CORS permission is opaque: it plays, but Web Audio refuses to let this page read it and
@@ -1719,14 +1754,21 @@
     el.src = t.url;
     if (!t.link) writeLastTrack(t.name);
     $('nowTitle').textContent = t.name;
-    $('nowSub').textContent = 'From this device';
+    $('nowSub').textContent = sourceNote(t);
     setHidden($('stageHint'), true);
     renderQueue();
     // The graph is built on a real gesture-driven play, which is when a phone will allow it.
     // Two-argument form, deliberately: with a trailing .catch, a throw inside started() would
     // land here and write "tap play to start" over music that was already playing — the app
     // blaming the phone for its own fault. This branch is now reachable only by a real refusal.
+    //
+    // AND ONLY BY THE PLAY THAT IS STILL CURRENT. A load that fails fires `error` and THEN
+    // rejects its play() promise, so by the time this runs for a refused link the retry has
+    // already begun on the other element — and "tap play to start" would be written over a
+    // track that is starting. The same happened to any track skipped while it was loading.
+    const seq = ++playSeq;
     el.play().then(started, () => {
+      if (seq !== playSeq) return;
       $('nowSub').textContent = TAP_NOTE;
       paintPlay();
     });
@@ -1752,13 +1794,15 @@
     // SAYS SO on the stage rather than leaving a wrong message standing.
     let visualsFailed = null;
     try {
-      if (audio && ensureGraph(audio)) { initVisuals(); startPump(); }
+      // The plain element is NEVER handed to ensureGraph — being outside the graph is the whole
+      // reason it has sound. The stage still starts for it, with nothing to read.
+      if (audio && (audio === plainAudio ? ensureCtx() : ensureGraph(audio))) { initVisuals(); startPump(); }
     } catch (e) {
       visualsFailed = e;
     }
     // The tap happened. Leave any other note alone — a link playing without visuals has its
     // own, and that one is still true.
-    if ($('nowSub').textContent === TAP_NOTE) $('nowSub').textContent = 'From this device';
+    if ($('nowSub').textContent === TAP_NOTE) $('nowSub').textContent = sourceNote(queue[current]);
     if (visualsFailed) {
       $('nowSub').textContent = 'Playing, but the visuals would not start on this phone. The '
         + 'sound is fine.';

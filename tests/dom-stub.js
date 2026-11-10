@@ -230,6 +230,10 @@ function shown(e) { return !(e && e.attrs && 'hidden' in e.attrs); }
  *   opts.src            source to run (defaults to the real pocket.js) — a case can load a
  *                       deliberately broken build to prove its own assertion can fail
  *   opts.blockFirstPlay refuse the first play() the way a phone does, allow every one after
+ *   opts.noCorsHosts    hostnames that refuse a CORS request: a play() with crossOrigin set fires
+ *                       `error` and then rejects, as a real load does; without it, it plays
+ *   opts.deadHosts      hostnames whose audio never loads at all, with or without CORS
+ *   opts.blockPlainPlay refuse, once, the play() of a link made without a CORS request
  *   opts.noFullscreen   no requestFullscreen on the element, as on a browser that lacks it
  *   opts.refuseFullscreen  the API exists and rejects, which is what a browser does when it
  *                       does not believe a gesture happened
@@ -256,30 +260,63 @@ function boot(opts) {
   const els = {};
   const get = (id) => (els[id] = els[id] || el(id));
 
-  const media = el('theAudio');
-  media.tagName = 'AUDIO';
-  media.paused = true;
-  media.currentTime = 0;
-  media.duration = 30;
-  media.src = '';
+  // ONE FAKE PER createElement('audio'), since 1.70.0. It was a single shared object, which made
+  // "the app has exactly one audio element" true by construction - and the no-CORS link fix is
+  // precisely a second element that must stay out of the Web Audio graph. `medias` is every one
+  // the app created, in order; `routed` is every one it handed to createMediaElementSource.
+  // `media` stays the FIRST, which is the only one every earlier suite ever meets.
   let playCalls = 0;
-  // THE REAL ELEMENT FIRES THESE AND THE APP LISTENS FOR THEM. paintPlay() runs from the play
-  // and pause handlers, so a stub that changes `paused` silently leaves the transport showing
-  // whatever it showed before - and a suite written against that stub asserts a button state
-  // the browser would never have produced.
-  media.play = () => {
-    playCalls++;
-    if (o.blockFirstPlay && playCalls === 1) return Promise.reject(new Error('NotAllowedError'));
-    media.paused = false;
-    fire(media, 'play');
-    return Promise.resolve();
-  };
-  media.pause = () => {
-    const was = media.paused;
-    media.paused = true;
-    if (!was) fire(media, 'pause');
-  };
-  media.load = () => { media.paused = true; media.currentTime = 0; };
+  const medias = [], routed = [];
+  function makeMedia() {
+    const m = el('theAudio' + (medias.length || ''));
+    m.tagName = 'AUDIO';
+    m.paused = true;
+    m.currentTime = 0;
+    m.duration = 30;
+    m.src = '';
+    // The real element's crossOrigin property reflects the attribute, so removing the attribute
+    // clears it. The app sets the property and removes the attribute; without this the fake
+    // would go on asking for CORS for ever.
+    const removeAttribute = m.removeAttribute;
+    m.removeAttribute = (k) => { if (String(k).toLowerCase() === 'crossorigin') m.crossOrigin = null; removeAttribute(k); };
+    // THE REAL ELEMENT FIRES THESE AND THE APP LISTENS FOR THEM. paintPlay() runs from the play
+    // and pause handlers, so a stub that changes `paused` silently leaves the transport showing
+    // whatever it showed before - and a suite written against that stub asserts a button state
+    // the browser would never have produced.
+    m.play = () => {
+      playCalls++;
+      if (o.blockFirstPlay && playCalls === 1) return Promise.reject(new Error('NotAllowedError'));
+      // A host that does not grant CORS, asked for it: the load fails. `error` fires FIRST and
+      // the play() promise rejects after it, which is the order the HTML spec gives and the
+      // order that let a stale rejection write over the retry.
+      const from = (hosts) => (hosts || []).some((h) => String(m.src).indexOf('//' + h + '/') >= 0);
+      // o.deadHosts fail the same way whether or not CORS was asked for: nothing there to play.
+      if (from(o.deadHosts) || (m.crossOrigin === 'anonymous' && from(o.noCorsHosts))) {
+        return new Promise((res, rej) => setTimeout(() => {
+          fire(m, 'error');
+          rej(new Error('NotSupportedError'));
+        }, 0));
+      }
+      // The retry made from that error is a play() no tap asked for. Refuse it, when a case asks.
+      if (o.blockPlainPlay && m.crossOrigin !== 'anonymous' && /^https?:/.test(String(m.src)) && !m.refusedOnce) {
+        m.refusedOnce = true;
+        return Promise.reject(new Error('NotAllowedError'));
+      }
+      m.paused = false;
+      fire(m, 'play');
+      return Promise.resolve();
+    };
+    m.pause = () => {
+      const was = m.paused;
+      m.paused = true;
+      if (!was) fire(m, 'pause');
+    };
+    m.load = () => { m.paused = true; m.currentTime = 0; };
+    medias.push(m);
+    return m;
+  }
+  const media = makeMedia();
+  let mediaHandedOut = false;
 
   // A stand-in for YouTube's player. It records what it was asked to load and lets a test drive
   // the state changes the real one fires, because those are what the transport reacts to.
@@ -401,7 +438,7 @@ function boot(opts) {
       return get(id);
     },
     createElement: (tag) => {
-      if (tag === 'audio') return media;
+      if (tag === 'audio') { if (!mediaHandedOut) { mediaHandedOut = true; return media; } return makeMedia(); }
       const e = el('');
       e.tagName = String(tag).toUpperCase();
       return e;
@@ -535,7 +572,7 @@ function boot(opts) {
         fftSize: 1024, frequencyBinCount: 512, smoothingTimeConstant: 0.75,
         connect: noop, getByteFrequencyData: noop,
       });
-      this.createMediaElementSource = () => ({ connect: noop });
+      this.createMediaElementSource = (m) => { routed.push(m); return { connect: noop }; };
       // The microphone's own analyser comes from here too. Counted so a test can assert the one
       // structural promise this app makes - that the mic's analyser is never the file's.
       this.createMediaStreamSource = () => { mic.sources++; return { connect: noop }; };
@@ -623,6 +660,9 @@ function boot(opts) {
     doc,
     els: get,
     media,
+    /** Every audio element the app created, and every one it put through Web Audio. */
+    medias,
+    routed,
     fullscreen,
     yt,
     resizes,
