@@ -141,6 +141,18 @@ async function started(opts) {
   check('and play does not pretend otherwise', playing(shut).length === 0 && /cannot be restarted/.test(note(shut)),
     playing(shut).length + ' playing, ' + note(shut));
 
+  // The same, on a phone whose visuals cannot start EITHER, the first time anything plays.
+  // started() writes "the visuals would not start... The sound is fine" - and until 1.76.0 wrote
+  // it AFTER the context check had paused the track and said why: a paused track under a note
+  // saying the sound is fine. Two faults at once, so rare; the visuals only fail to start once,
+  // which is why the context here is closed from the beginning and not closed later.
+  const both = boot({ src: SRC, ctxResume: 'refuse', ctxState: 'closed', brokenRenderer: true });
+  pick(both);
+  await settle();
+  await press(both, 'playBtn');
+  check('ON A CLOSED CONTEXT THE REASON IT STOPPED IS NOT WRITTEN OVER', playing(both).length === 0
+    && /cannot be restarted/.test(note(both)), playing(both).length + ' playing, ' + note(both));
+
   // ── 6. the deadline is a deadline, not an instant stop ───────────────────────────────────
   // Real timers here. A headset switch takes a second or two, and the music must survive it.
   const patient = boot({ src: SRC, ctxResume: 'hang' });

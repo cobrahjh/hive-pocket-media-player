@@ -156,6 +156,38 @@ const press = async (app, id) => { fire(app.els(id), 'click'); await rest(); };
     again.store.get('hive-pocket.links') === JSON.stringify([{ name: 'a song', url: QUIET }]),
     String(again.store.get('hive-pocket.links')));
 
+  // ── 6b. a link that WAS playing, with visuals, and then breaks ───────────────────────────
+  // The network drops in the middle of a song. That is not the host refusing CORS - it granted
+  // it, the track was playing through the graph - so it must not be retried as if it were, and
+  // above all the row must not be remembered as one that cannot have visuals. Until 1.76.0 any
+  // error on an element that had asked for CORS took that road, however long it had played.
+  const drop = boot({ src: SRC, store: saved(OPEN) });
+  await press(drop, 'playBtn');
+  now = playing(drop);
+  check('a link whose host allows CORS plays through the graph',
+    now.length === 1 && now[0].src === OPEN && drop.routed.indexOf(now[0]) >= 0
+    && drop.els('nowSub').textContent === 'From a saved link', drop.els('nowSub').textContent);
+  const playsBefore = drop.playCalls();
+  fire(now[0], 'error');
+  await rest();
+  check('AN ERROR IN THE MIDDLE OF IT IS NOT RETRIED WITHOUT CORS', drop.playCalls() === playsBefore
+    && playing(drop).every((m) => drop.routed.indexOf(m) >= 0),
+    'play() calls ' + playsBefore + ' -> ' + drop.playCalls() + ': it started again outside the graph');
+  check('AND THE ROW IS NOT MARKED AS A LINK WITHOUT VISUALS', drop.pocket.queue[0].noCors !== true,
+    'one dropped connection, and this link has no visuals until the app is reopened');
+  check('it says the link would not play', /would not play/.test(drop.els('nowSub').textContent),
+    drop.els('nowSub').textContent);
+
+  // The refusal itself must still be caught when the first play() was blocked by the phone:
+  // nothing has played yet, so the flag is still up when the tap's attempt is refused.
+  const tapped = boot({ src: SRC, store: saved(QUIET), noCorsHosts: ['nocors.example'], blockFirstPlay: true });
+  await press(tapped, 'playBtn');
+  await press(tapped, 'playBtn');
+  now = playing(tapped);
+  check('a refused link behind a blocked first play still gets its retry',
+    now.length === 1 && now[0].src === QUIET && tapped.routed.indexOf(now[0]) < 0,
+    now.length + ' playing; ' + tapped.els('nowSub').textContent);
+
   // ── 7. this suite must be able to fail ───────────────────────────────────────────────────
   // Hand the plain element to the graph again and require case 1's central check to collapse.
   if (!process.env.POCKET_SRC) {

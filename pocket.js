@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.75.0-beta';
+  const VERSION = '1.76.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1888,6 +1888,13 @@
     // Splitting it means a renderer that cannot start costs the renderer and nothing else, and
     // SAYS SO on the stage rather than leaving a wrong message standing.
     let visualsFailed = null;
+    // IT PLAYED, so whatever goes wrong with this load from here on is not the host refusing
+    // CORS: a refusal comes before a single sample does. Left set, the flag sent ANY later error
+    // - the network dropping in the middle of a song - down the "host refused" road: the track
+    // started again from the top outside the graph, and the row was then remembered as a link
+    // that cannot have visuals, for the rest of the visit, on the strength of a tunnel.
+    // First line, not after the visuals: toggle() swallows whatever this function throws.
+    if (audio) audio.corsTried = false;
     try {
       // The plain element is NEVER handed to ensureGraph — being outside the graph is the whole
       // reason it has sound. The stage still starts for it, with nothing to read.
@@ -1902,13 +1909,15 @@
     const row = queue[current];
     if (row && row.link && audio === plainAudio) row.noCors = true;
     if (STOPPED_NOTES.indexOf($('nowSub').textContent) >= 0) $('nowSub').textContent = sourceNote(row);
-    // ensureGraph() asked for the context above. If that is refused nothing changes state, so
-    // no event will ever say so: start the deadline here, or this track plays on in silence.
-    watchCtx();
     if (visualsFailed) {
       $('nowSub').textContent = 'Playing, but the visuals would not start on this phone. The '
         + 'sound is fine.';
     }
+    // ensureGraph() asked for the context above. If that is refused nothing changes state, so
+    // no event will ever say so: start the deadline here, or this track plays on in silence.
+    // AFTER the visuals note, and it has to stay after: on a closed context this pauses the
+    // track there and then and says why, and "the sound is fine" was being written over that.
+    watchCtx();
     paintMediaSession();
   }
 
