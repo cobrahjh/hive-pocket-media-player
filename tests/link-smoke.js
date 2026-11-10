@@ -175,8 +175,78 @@ const press = async (app, id) => { fire(app.els(id), 'click'); await rest(); };
     'play() calls ' + playsBefore + ' -> ' + drop.playCalls() + ': it started again outside the graph');
   check('AND THE ROW IS NOT MARKED AS A LINK WITHOUT VISUALS', drop.pocket.queue[0].noCors !== true,
     'one dropped connection, and this link has no visuals until the app is reopened');
-  check('it says the link would not play', /would not play/.test(drop.els('nowSub').textContent),
+  // 1.76.0 said "That link would not play. It has to point straight at an audio file." here,
+  // to a link that had just been playing. And left the element as it was: not paused, as far as
+  // the browser is concerned, so pause bars over a dead track and a Play that did nothing.
+  check('IT SAYS THE LINK STOPPED, not that it is the wrong kind of address',
+    drop.els('nowSub').textContent === 'That link stopped. Press play to start it again.',
     drop.els('nowSub').textContent);
+  check('NOTHING IS LEFT "PLAYING"', playing(drop).length === 0, playing(drop).length + ' element(s) not paused');
+  check('and the button offers Play', drop.els('playBtn').getAttribute('aria-label') === 'Play',
+    String(drop.els('playBtn').getAttribute('aria-label')));
+  await press(drop, 'playBtn');
+  now = playing(drop);
+  check('PLAY STARTS THE LINK AGAIN, through the graph, in one press',
+    now.length === 1 && now[0].src === OPEN && drop.routed.indexOf(now[0]) >= 0 && now[0].crossOrigin === 'anonymous'
+    && drop.els('nowSub').textContent === 'From a saved link',
+    now.length + ' playing; ' + drop.els('nowSub').textContent);
+  // The retry worked, so the row is no longer "the one that failed": pause and play must be
+  // pause and play, not a second start from the top. Counted by how often the element is
+  // unloaded, which is the one thing a restart does and a resume does not.
+  const resumed = async (app) => {
+    const m = playing(app)[0];
+    if (!m) return 'nothing playing';
+    let loads = 0;
+    const load = m.load;
+    m.load = function () { loads++; return load.apply(m, arguments); };
+    await press(app, 'playBtn');
+    await press(app, 'playBtn');
+    m.load = load;
+    return playing(app).length === 1 && loads === 0 ? 'resumed' : 'restarted (' + loads + ' unload)';
+  };
+  const how = await resumed(drop);
+  check('ONCE IT PLAYS AGAIN, PAUSE AND PLAY RESUME IT - they do not start it over', how === 'resumed', how);
+
+  // Five of those in a row are one link having a bad day, not "five tracks that would not play".
+  for (let i = 0; i < 5; i++) {
+    if (playing(drop)[0]) fire(playing(drop)[0], 'error');
+    await rest();
+    await press(drop, 'playBtn');
+  }
+  check('five drops in a row are not "five tracks in a row"', playing(drop).length === 1
+    && !/Five tracks/.test(drop.els('nowSub').textContent) && drop.pocket.failRun === 0,
+    drop.els('nowSub').textContent + ' (failRun ' + drop.pocket.failRun + ')');
+
+  // A link that never loads at all keeps its own note, and gets the same honest button.
+  const never = boot({ src: SRC, store: saved('https://gone.example/x.mp3'), deadHosts: ['gone.example'] });
+  await press(never, 'playBtn');
+  check('a link that never loaded still says it would not play', /That link would not play/.test(never.els('nowSub').textContent),
+    never.els('nowSub').textContent);
+  check('with nothing "playing" and the button offering Play', playing(never).length === 0
+    && never.els('playBtn').getAttribute('aria-label') === 'Play', String(never.els('playBtn').getAttribute('aria-label')));
+  const triesBefore = never.playCalls();
+  await press(never, 'playBtn');
+  check('and Play tries it again - with CORS first, as a fresh start does', never.playCalls() === triesBefore + 2,
+    triesBefore + ' -> ' + never.playCalls());
+
+  // The failed row is forgotten the moment something else plays: Play then means that track.
+  const moved = boot({ src: SRC, store: saved(OPEN) });
+  pick(moved);
+  await settle();
+  await press(moved, 'playBtn');
+  const firstTitle = moved.els('nowTitle').textContent;
+  // Walk to the link, break it, walk off it, pause, play: the track walked to must resume.
+  for (let i = 0; i < 12 && moved.els('nowTitle').textContent !== 'a song'; i++) await press(moved, 'nextBtn');
+  check('the link is reached', moved.els('nowTitle').textContent === 'a song', moved.els('nowTitle').textContent + ' (began at ' + firstTitle + ')');
+  fire(playing(moved)[0], 'error');
+  await rest();
+  await press(moved, 'nextBtn');
+  const movedTo = moved.els('nowTitle').textContent;
+  await press(moved, 'playBtn');                      // pause
+  await press(moved, 'playBtn');                      // play
+  check('after moving on, Play resumes the track moved to, not the failed link',
+    moved.els('nowTitle').textContent === movedTo && movedTo !== 'a song' && playing(moved).length === 1,
+    moved.els('nowTitle').textContent);
 
   // The refusal itself must still be caught when the first play() was blocked by the phone:
   // nothing has played yet, so the flag is still up when the tap's attempt is refused.
@@ -199,6 +269,18 @@ const press = async (app, id) => { fire(app.els(id), 'click'); await rest(); };
     const broken = boot({ src: brokenSrc, store: saved(QUIET), noCorsHosts: ['nocors.example'] });
     await press(broken, 'playBtn');
     now = playing(broken);
+    // 6b's resume check guards one assignment in play(). Without it, the row stays "failed"
+    // after a retry that worked, and every later Play restarts the song.
+    const CLEAR = '    teardown();\n    failedTrack = null;\n    // A refused link is REMEMBERED';
+    const sticky = SRC.replace(CLEAR, '    teardown();\n    // A refused link is REMEMBERED');
+    check('the second mutation applied', sticky !== SRC, 'play() has been reworded - update the string');
+    const stuck = boot({ src: sticky, store: saved(OPEN) });
+    await press(stuck, 'playBtn');
+    fire(playing(stuck)[0], 'error');
+    await rest();
+    await press(stuck, 'playBtn');
+    const stuckHow = await resumed(stuck);
+    check('without it, Play starts the song over', /^restarted/.test(stuckHow), stuckHow);
     check('without the guard the link is routed again', !!now[0] && broken.routed.indexOf(now[0]) >= 0,
       'the mutated build still kept the link out of the graph, so case 1 proves nothing');
   }

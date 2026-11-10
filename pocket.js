@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.76.0-beta';
+  const VERSION = '1.77.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1688,6 +1688,9 @@
   // to createMediaElementSource. `audio` is whichever of the two is in use; teardown() runs
   // before any switch, so only one of them ever holds a src.
   let routedAudio = null, plainAudio = null, playSeq = 0;
+  // The row whose link just failed, so that Play can load it again. The ROW, not a yes/no:
+  // a queue that is replaced or reordered under it makes a flag point at some other track.
+  let failedTrack = null;
   // THE NOTES THAT SAY "IT STOPPED", each of which is followed by somebody pressing play. Once
   // that play has really begun they are no longer true, and started() takes them down. Only
   // "tap play" used to be, so the other two went on announcing a stop over music that was
@@ -1700,6 +1703,7 @@
   // Short enough to sit on the line whole at 360px. The longer wording explained more and ran
   // to a third line, which the two-line clamp cut off.
   const NO_VISUALS_NOTE = 'Playing, but no visuals. That site blocks them.';
+  const LINK_STOPPED_NOTE = 'That link stopped. Press play to start it again.';
 
   // What the line under the title says while a track plays. A link is not "from this device".
   function sourceNote(t) {
@@ -1757,6 +1761,23 @@
       // a phone asking for a tap, so the rejection must not write "tap play" over the reason
       // given below — which it did, for every link that would not play at all.
       playSeq++;
+      // A LINK STOPS HERE AND SAYS SO; nothing skips on its behalf, so there is no run to count.
+      // It used to write its note and leave everything else as it was: an element the browser
+      // still calls "not paused", so pause bars and a lock screen saying "playing" over a dead
+      // track, and a Play button whose first press paused nothing and whose second asked a
+      // broken element to carry on. Now the element is unloaded, which makes "paused" true by
+      // the same road every other stop takes, and the row is remembered so Play loads it again.
+      // And a link that HAD been playing is not told it "has to point straight at an audio
+      // file" - it plainly does. (began is set by started(): a play() that really resolved.)
+      if (t && t.link) {
+        failRun = 0;
+        $('nowSub').textContent = el.began ? LINK_STOPPED_NOTE
+          : 'That link would not play. It has to point straight at an audio file.';
+        teardown();
+        failedTrack = t;
+        paintPlay();
+        return;
+      }
       // A BOUND ON SKIPPING, and lazy loading is what made it matter. One unplayable file has
       // always skipped to the next, which is right; a whole folder of them sprinted silently
       // through every track in the queue, and now each of those skips also reads a file off the
@@ -1771,10 +1792,8 @@
         paintPlay();
         return;
       }
-      $('nowSub').textContent = t && t.link
-        ? 'That link would not play. It has to point straight at an audio file.'
-        : 'That file would not play — skipping.';
-      if (!t || !t.link) next(false, true);
+      $('nowSub').textContent = 'That file would not play — skipping.';
+      next(false, true);
     });
     return el;
   }
@@ -1813,6 +1832,7 @@
       // Whatever was playing stops, as it does for any other row that is pressed. It did not:
       // the old track carried on under this row's title, with a note saying nothing could play.
       teardown();
+      failedTrack = null;
       playSeq++;
       current = i;
       $('nowTitle').textContent = t.name;
@@ -1824,6 +1844,7 @@
     // Unload whichever element was in use BEFORE choosing the one for this track, so the two
     // can never sound at once. Only a link already refused by its host goes to the plain one.
     teardown();
+    failedTrack = null;
     // A refused link is REMEMBERED (t.noCors, set in started() once the retry has really played)
     // so that playing it again, on repeat or from the row, does not ask for CORS and fail first
     // every time: one wasted request and a gap of silence per pass. For this visit only, and it
@@ -1843,6 +1864,7 @@
     if (t.link && !plain) el.crossOrigin = 'anonymous';
     else el.removeAttribute('crossorigin');
     el.corsTried = !!(t.link && !plain);
+    el.began = false;
     el.src = t.url;
     if (!t.link) writeLastTrack(t.name);
     $('nowTitle').textContent = t.name;
@@ -1894,7 +1916,7 @@
     // started again from the top outside the graph, and the row was then remembered as a link
     // that cannot have visuals, for the rest of the visit, on the strength of a tunnel.
     // First line, not after the visuals: toggle() swallows whatever this function throws.
-    if (audio) audio.corsTried = false;
+    if (audio) { audio.corsTried = false; audio.began = true; }
     try {
       // The plain element is NEVER handed to ensureGraph — being outside the graph is the whole
       // reason it has sound. The stage still starts for it, with nothing to read.
@@ -1956,6 +1978,9 @@
     // rejection instead of vanishing. See the note in started().
     // Asked for HERE as well as in started(): some browsers only honour resume() from inside
     // the tap itself, and by the time the play() promise settles the tap is over.
+    // A link that failed was unloaded. play() on that element would have nothing to play;
+    // load the row again, from the top.
+    if (failedTrack && queue[current] === failedTrack) { play(current); return; }
     if (audio.paused) wakeCtx();
     if (audio.paused) audio.play().then(started, () => {});
     else audio.pause();
