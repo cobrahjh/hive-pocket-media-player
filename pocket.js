@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.79.0-beta';
+  const VERSION = '1.80.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1315,6 +1315,11 @@
       returns.push(snap);
       if (returns.length > 3) returns.shift();
     } catch (e) { /* a report line is never worth breaking the return for */ }
+    // A page can be thawed, or restored from cache, while it is still HIDDEN. That return is
+    // written down above, but the second and a half is not started until the page is shown:
+    // started here, it would run out just after the app appeared and pause a track that had
+    // been given no time to move.
+    if (document.visibilityState !== 'visible') return;
     if (stallTimer || !audio || audio.paused || audio.ended || audio.seeking || audio.readyState < 3) return;
     const el = audio, seq = playSeq, t0 = el.currentTime, c0 = ctx ? ctx.currentTime : null;
     stallTimer = setTimeout(() => {

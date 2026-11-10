@@ -366,5 +366,20 @@ async function started(opts) {
   check('and thawing it checks again', playing(iced).length === 0 && /Sound was interrupted/.test(note(iced))
     && /frozen 1, thawed 1/.test(line(iced, 'page open for')), note(iced) + ' | ' + line(iced, 'page open for'));
 
+  // Thawed while still hidden, shown a second later. The second and a half starts at SHOWN.
+  const thawedHidden = await real();
+  thawedHidden.doc.visibilityState = 'hidden';
+  thawedHidden.doc_fire('resume');
+  await wait(1000);
+  comeBack(thawedHidden);
+  await wait(800);                                    // 1.8 s after the thaw, 0.8 s after it was shown
+  check('A PAGE THAWED WHILE HIDDEN DOES NOT START THE CLOCK UNTIL IT IS SHOWN', playing(thawedHidden).length === 1
+    && note(thawedHidden) === 'From this device', note(thawedHidden));
+  check('and the hidden return is still written down', /^return to the app 1: \(thawed\+shown\)/.test(line(thawedHidden, 'return to the app 1')),
+    line(thawedHidden, 'return to the app 1'));
+  await wait(1000);
+  check('and once shown, a stuck track is still caught', playing(thawedHidden).length === 0
+    && /Sound was interrupted/.test(note(thawedHidden)), note(thawedHidden));
+
   t.report();
 })();
