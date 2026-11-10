@@ -76,7 +76,7 @@ async function pickAndPlay(app) {
   // ── 4. this suite must be able to fail ───────────────────────────────────────────────────
   // Cut the fix out and require case 2 to collapse. Without this, the whole file could be
   // asserting something that is true of the broken build as well, and nobody would know.
-  const brokenSrc = SRC.replace('audio.play().then(started, () => {});',
+  const brokenSrc = SRC.replace('audio.play().then(started, refusedPlay);',
                                 'audio.play().catch(() => {});');
   check('the mutation applied', brokenSrc !== SRC,
     'the line this suite mutates has been reworded in pocket.js - update the string, do not '

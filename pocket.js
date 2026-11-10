@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.77.0-beta';
+  const VERSION = '1.78.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1255,6 +1255,88 @@
     watchCtx();
   }
 
+  // ── Coming back to a track that is "playing" and is not ──────────────────────────────────
+  // Reported from the phone on 1.77.0: the app is opened again and the button ALREADY shows
+  // pause, there is no sound, and the time is not moving. Pause, then Play, and it carries on
+  // from where it was. So the element says it is not paused and is going nowhere - and the
+  // context watch above never fires, because it only knows one way for that to happen (a
+  // context that SAYS it is stopped, on the routed element, with the page awake to run a timer).
+  //
+  // WHICH of the other ways this is cannot be told from a desk: a context that still says
+  // 'running' with the audio device gone, the page frozen and thawed with no pause event ever
+  // sent, a play() that never settled. So two things, and the first does not depend on knowing.
+  //
+  // 1. THE SYMPTOM ITSELF IS CHECKED. On coming back, a track that is not paused, has data,
+  //    and has not moved in STALL_MS is paused, with the same true sentence the context watch
+  //    uses. That is right whatever caused it, and it covers the plain element too. One timer,
+  //    never extended. WHAT IT COSTS: a track whose sound really was about to come back after
+  //    more than a second and a half is paused instead, and wants a tap.
+  //    WHAT IT LEAVES ALONE, each of which review caught it pausing: a clock that moved EITHER
+  //    way (a drag back along the seek bar is the person, not a fault); a seek still in flight;
+  //    a link that has run out of data and is buffering (readyState below 3 - it may be wedged,
+  //    and the report will say so, but a slow network is not an interruption); and a context
+  //    that admits it is down, which the watch above already has on a longer, deliberate grace.
+  // 2. WHAT THE APP CAME BACK TO IS WRITTEN DOWN, before anything here can change it, and the
+  //    last three of those are kept - because copying the report means leaving the app, and the
+  //    return from THAT would otherwise overwrite the one that mattered. Numbers and states only.
+  const STALL_MS = 1500;
+  const BOOT_AT = performance.now();
+  const sinceBoot = () => Math.round((performance.now() - BOOT_AT) / 1000) + 's';
+  const playLog = { asked: 0, started: 0, refused: 0, last: 'none' };
+  const lifeLog = { froze: 0, resumed: 0, fromCache: 0, stalled: 0 };
+  const returns = [];
+  let lastEvent = 'none', lastEventAt = 0, stallTimer = 0;
+
+  function audioState() {
+    if (!audio) return 'no element';
+    return (audio === plainAudio ? 'plain' : 'routed') + ', paused ' + audio.paused
+      + ', ready ' + audio.readyState + ', network ' + audio.networkState
+      + ', at ' + (Math.round((audio.currentTime || 0) * 10) / 10) + 's'
+      + ', error ' + (audio.error ? audio.error.code : 'none');
+  }
+  function refusedPlay(e) {
+    // Paused or replaced while still loading is not a refusal; it is counted as neither.
+    if (e && e.name === 'AbortError') { playLog.last = 'aborted'; return; }
+    playLog.refused++;
+    playLog.last = 'refused ' + ((e && e.name) || 'unknown');
+  }
+  function onReturn(why) {
+    let snap = null;
+    try {
+      // One return can arrive as two events (thawed, then shown). That is one return: the second
+      // is added to the first's name, or it would use up a place among the three kept.
+      const prev = returns[returns.length - 1];
+      if (prev && performance.now() - prev.at < 2000) { prev.why += '+' + why; snap = prev; }
+    } catch (e) { /* as below */ }
+    if (!snap) try {
+      snap = { at: performance.now(), why: why, text: sinceBoot() + ' in: context ' + (ctx ? ctx.state : 'none') + '; ' + audioState()
+        + '; last event ' + lastEvent + (lastEventAt ? ' ' + Math.round((performance.now() - lastEventAt) / 1000) + 's before' : ''),
+        after: 'not sampled' };
+      returns.push(snap);
+      if (returns.length > 3) returns.shift();
+    } catch (e) { /* a report line is never worth breaking the return for */ }
+    if (stallTimer || !audio || audio.paused || audio.ended || audio.seeking || audio.readyState < 3) return;
+    const el = audio, seq = playSeq, t0 = el.currentTime, c0 = ctx ? ctx.currentTime : null;
+    stallTimer = setTimeout(() => {
+      stallTimer = 0;
+      if (el !== audio || seq !== playSeq || el.paused || document.visibilityState !== 'visible') return;
+      const moved = el.currentTime - t0;
+      if (snap) {
+        snap.after = 'element ' + (moved < 0 ? '' : '+') + moved.toFixed(2) + 's, context '
+          + (ctx && c0 !== null ? '+' + (ctx.currentTime - c0).toFixed(2) + 's' : 'none') + ' in ' + STALL_MS + ' ms'
+          + ', ready ' + el.readyState + (el.seeking ? ', seeking' : '') + (silenced() ? ', left to the context watch' : '');
+      }
+      if (Math.abs(moved) >= 0.05 || el.seeking || el.readyState < 3 || silenced()) return;
+      lifeLog.stalled++;
+      el.pause();
+      $('nowSub').textContent = INTERRUPTED_NOTE;
+      paintPlay();
+    }, STALL_MS);
+  }
+  document.addEventListener('freeze', () => { lifeLog.froze++; });
+  document.addEventListener('resume', () => { lifeLog.resumed++; onReturn('thawed'); });
+  window.addEventListener('pageshow', (ev) => { if (ev && ev.persisted) { lifeLog.fromCache++; onReturn('from cache'); } });
+
   // ── The microphone ──────────────────────────────────────────────────────
   // Why this exists: everything else in this app can only see audio it owns. A file it plays,
   // yes; a link from a host that will not grant permission, no — those come back as silence and
@@ -1311,6 +1393,8 @@
   // it comes back. Without this, switching apps once and returning leaves the screen sleeping
   // again with the microphone still open, which reads as the feature having quietly broken.
   document.addEventListener('visibilitychange', () => {
+    // FIRST, and it cannot throw: what the app came back to, before the lines below change it.
+    if (document.visibilityState === 'visible') onReturn('shown');
     if (document.visibilityState === 'visible' && micLive) keepAwake(true);
     // Coming back to the app is the likeliest moment to find the context left down.
     if (document.visibilityState === 'visible') watchCtx();
@@ -1721,6 +1805,11 @@
     audio = el;
     el.addEventListener('timeupdate', paintTime);
     el.addEventListener('durationchange', paintTime);
+    // For the report only: the last thing this element said, and when. A stuck track whose last
+    // word was "waiting" is a different fault from one that was never told to pause.
+    ['play', 'playing', 'pause', 'waiting', 'stalled', 'suspend', 'emptied', 'ended', 'error'].forEach((n) => {
+      el.addEventListener(n, () => { if (el === audio) { lastEvent = n; lastEventAt = performance.now(); } });
+    });
     // NOT a place to clear failRun: this fires for a track that is about to end instantly too,
     // which would reset the count on exactly the case the count exists for.
     // Each of the three below ignores the element that is NOT in use: a late event from the one
@@ -1881,7 +1970,9 @@
     // already begun on the other element — and "tap play to start" would be written over a
     // track that is starting. The same happened to any track skipped while it was loading.
     const seq = ++playSeq;
+    playLog.asked++; playLog.last = 'pending';
     el.play().then(started, (e) => {
+      refusedPlay(e);
       if (seq !== playSeq) return;
       // Paused while it was still loading: the browser rejects that play() with AbortError.
       // Nobody refused anything, so there is no tap to ask for.
@@ -1916,6 +2007,7 @@
     // started again from the top outside the graph, and the row was then remembered as a link
     // that cannot have visuals, for the rest of the visit, on the strength of a tunnel.
     // First line, not after the visuals: toggle() swallows whatever this function throws.
+    playLog.started++; playLog.last = 'started';
     if (audio) { audio.corsTried = false; audio.began = true; }
     try {
       // The plain element is NEVER handed to ensureGraph — being outside the graph is the whole
@@ -1982,7 +2074,7 @@
     // load the row again, from the top.
     if (failedTrack && queue[current] === failedTrack) { play(current); return; }
     if (audio.paused) wakeCtx();
-    if (audio.paused) audio.play().then(started, () => {});
+    if (audio.paused) { playLog.asked++; playLog.last = 'pending'; audio.play().then(started, refusedPlay); }
     else audio.pause();
   }
   // fromEnd: a track that ran out, as opposed to the button. Only the former stops at the end
@@ -2943,6 +3035,16 @@
     // from a desk. These three counts are the answer.
     add('audio context', ctx ? ctx.state + ', stopped ' + ctxLog.stopped + ', came back ' + ctxLog.cameBack
       + ', gave up ' + ctxLog.gaveUp : 'none yet');
+    // What a track that "is playing and is not" looks like from the inside. See onReturn().
+    add('page open for', sinceBoot() + ', frozen ' + lifeLog.froze + ', thawed ' + lifeLog.resumed
+      + ', from cache ' + lifeLog.fromCache + ', discarded ' + (document.wasDiscarded === true));
+    add('audio element', audioState());
+    add('play button says', $('playBtn').getAttribute('aria-label'));
+    add('play calls', 'asked ' + playLog.asked + ', started ' + playLog.started + ', refused ' + playLog.refused
+      + ', last ' + playLog.last);
+    add('stuck tracks paused on return', lifeLog.stalled);
+    if (!returns.length) add('return to the app', 'never left');
+    returns.forEach((r, i) => add('return to the app ' + (i + 1), '(' + r.why + ') ' + r.text + '; then ' + r.after));
     add('screen awake', !!wakeLock);
     add('queue length', queue.length);          // a count, never the contents
     add('saved links', readLinks().length);     // likewise

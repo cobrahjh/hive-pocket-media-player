@@ -210,5 +210,131 @@ async function started(opts) {
   check('returning to the app notices a context left down',
     (await until(() => playing(away).length === 0)) === true && /Sound was interrupted/.test(note(away)), note(away));
 
+  // ── 9. a track that "is playing" and is not, with a context that says it is fine ─────────
+  // From the phone, on 1.77.0: the app is opened again, the button already shows pause, there
+  // is no sound and the time is not moving. Nothing above catches that - every case so far has
+  // a context that ADMITS it stopped. Here it says 'running' throughout.
+  const line = (app, key) => (String(app.pocket.diagnostics()).split('\n').find((l) => l.indexOf(key + ':') === 0) || '(no line: ' + key + ')');
+  const comeBack = (app) => { app.doc.visibilityState = 'visible'; app.doc_fire('visibilitychange'); };
+
+  const stuck2 = await started();
+  check('the report describes the element while it plays', /^audio element: routed, paused false/.test(line(stuck2, 'audio element'))
+    && line(stuck2, 'play calls') === 'play calls: asked 1, started 1, refused 0, last started'
+    && line(stuck2, 'play button says') === 'play button says: Pause',
+    [line(stuck2, 'audio element'), line(stuck2, 'play calls'), line(stuck2, 'play button says')].join(' | '));
+  comeBack(stuck2);                                   // and its clock never moves
+  check('A TRACK THAT HAS NOT MOVED SINCE THE APP CAME BACK IS PAUSED', (await until(() => playing(stuck2).length === 0)) === true,
+    'still "playing": pause bars, no sound, the time standing still');
+  check('and says why', /Sound was interrupted/.test(note(stuck2)), note(stuck2));
+  check('the button offers Play', stuck2.els('playBtn').getAttribute('aria-label') === 'Play');
+  check('it is counted as a stuck track, not as a context that stopped',
+    line(stuck2, 'stuck tracks paused on return') === 'stuck tracks paused on return: 1' && /stopped 0, came back 0, gave up 0/.test(diag(stuck2)),
+    line(stuck2, 'stuck tracks paused on return') + ' | ' + diag(stuck2));
+  check('THE REPORT KEEPS WHAT THE APP CAME BACK TO, from before it was paused',
+    /^return to the app 1: \(shown\) .*context running; routed, paused false/.test(line(stuck2, 'return to the app 1')) && /then element \+0\.00s/.test(line(stuck2, 'return to the app 1')),
+    line(stuck2, 'return to the app 1'));
+  await press(stuck2, 'playBtn');
+  check('play carries on and takes the notice down', playing(stuck2).length === 1 && note(stuck2) === 'From this device', note(stuck2));
+
+  // The same return, to a track that IS playing. Its clock moves; it is left alone.
+  const fine = await started();
+  comeBack(fine);
+  fine.medias[0].currentTime += 1.2;
+  await pastTheDeadline();
+  check('A TRACK THAT IS MOVING IS NOT TOUCHED', playing(fine).length === 1 && note(fine) === 'From this device'
+    && line(fine, 'stuck tracks paused on return') === 'stuck tracks paused on return: 0', note(fine));
+  check('and the report says how far it moved', /then element \+1\.20s/.test(line(fine, 'return to the app 1')), line(fine, 'return to the app 1'));
+
+  // WHAT THE CHECK MUST LEAVE ALONE. Each of these was paused by the first version of it.
+  // The person drags the seek bar BACK: the clock moved, the wrong way, and that is not a fault.
+  const back2 = await started();
+  back2.medias[0].currentTime = 20;
+  comeBack(back2);
+  back2.medias[0].currentTime = 3;
+  await pastTheDeadline();
+  check('a clock that moved BACKWARDS is the person seeking, not a stuck track', playing(back2).length === 1
+    && note(back2) === 'From this device', note(back2));
+
+  // A link that ran out of data is buffering. Slow is not interrupted.
+  const slow = await started();
+  comeBack(slow);
+  slow.medias[0].readyState = 2;
+  await pastTheDeadline();
+  check('a track that is buffering is not called interrupted', playing(slow).length === 1 && note(slow) === 'From this device', note(slow));
+  check('and the report says it was short of data', /ready 2/.test(line(slow, 'return to the app 1')), line(slow, 'return to the app 1'));
+
+  // A context that ADMITS it is down has its own, longer grace (case 6). This check is shorter,
+  // and must not undercut it: real timers, and 1.7 s is past this one and inside that one.
+  const grace = boot({ src: SRC, ctxResume: 'hang' });
+  pick(grace);
+  await settle();
+  await press(grace, 'playBtn');
+  grace.ctxs[0].state = 'suspended';
+  comeBack(grace);
+  await new Promise((r) => setTimeout(r, 1700));
+  check('THE CONTEXT WATCH KEEPS ITS FULL GRACE - the shorter check stands aside', playing(grace).length === 1,
+    'paused at a second and a half, when the grace for a headset switch is two and a half');
+  check('and the report says who was left to deal with it', /left to the context watch/.test(line(grace, 'return to the app 1')),
+    line(grace, 'return to the app 1'));
+  await press(grace, 'playBtn');                      // stop it, so no timer outlives the suite
+
+  // One return, two events. It is one line in the report, named for both.
+  const twice = await started();
+  twice.doc_fire('resume');
+  comeBack(twice);
+  twice.medias[0].currentTime += 2;
+  await pastTheDeadline();
+  const twiceLines = String(twice.pocket.diagnostics()).split('\n').filter((l) => /^return to the app \d/.test(l));
+  check('a return that arrives as two events is ONE return', twiceLines.length === 1 && /\(thawed\+shown\)/.test(twiceLines[0])
+    && /then element \+2\.00s/.test(twiceLines[0]), twiceLines.join(' || '));
+
+  // Paused by hand inside the wait: that is not an interruption.
+  const hand = await started();
+  comeBack(hand);
+  await press(hand, 'playBtn');
+  await pastTheDeadline();
+  check('a track paused by hand inside the wait gets no notice', !/interrupted/.test(note(hand)), note(hand));
+
+  // The plain element is outside the graph, so the context watch leaves it alone (case 7). A
+  // stuck clock is a stuck clock on either element.
+  const plain2 = boot({ src: SRC, shortGrace: true, noCorsHosts: ['nocors.example'],
+    store: new Map([['hive-pocket.links', JSON.stringify([{ name: 'a song', url: 'https://nocors.example/q.mp3' }])]]) });
+  await press(plain2, 'playBtn');
+  check('a no-CORS link is playing on the plain element', playing(plain2).length === 1 && /^audio element: plain/.test(line(plain2, 'audio element')),
+    line(plain2, 'audio element'));
+  comeBack(plain2);
+  check('a stuck link outside the graph is paused too', (await until(() => playing(plain2).length === 0)) === true
+    && /Sound was interrupted/.test(note(plain2)), note(plain2));
+
+  // Coming back with nothing loaded must not throw, and is still written down.
+  const empty = boot({ src: SRC, shortGrace: true });
+  check('before anything, the report says so', line(empty, 'audio element') === 'audio element: no element'
+    && line(empty, 'return to the app') === 'return to the app: never left'
+    && line(empty, 'play calls') === 'play calls: asked 0, started 0, refused 0, last none',
+    [line(empty, 'audio element'), line(empty, 'return to the app'), line(empty, 'play calls')].join(' | '));
+  let threw = null;
+  try { comeBack(empty); } catch (e) { threw = e; }
+  check('coming back with nothing loaded does not throw', threw === null && /context none; no element/.test(line(empty, 'return to the app 1')),
+    String(threw) + ' | ' + line(empty, 'return to the app 1'));
+
+  // THE LAST THREE RETURNS ARE KEPT. Copying the report means leaving the app, and coming back
+  // from that must not be the only return the report remembers.
+  const many = await started();
+  for (let i = 0; i < 5; i++) {
+    comeBack(many);
+    many.medias[0].currentTime += 2;
+    await new Promise((r) => setTimeout(r, 2100));   // far enough apart to be separate returns
+  }
+  const kept = String(many.pocket.diagnostics()).split('\n').filter((l) => /^return to the app \d/.test(l));
+  check('three returns are kept, no more and no fewer', kept.length === 3, kept.length + ' kept');
+
+  // A refused play() is counted, which is how a play that never started shows in the report.
+  const refused = boot({ src: SRC, shortGrace: true, blockFirstPlay: true });
+  pick(refused);
+  await settle();
+  await press(refused, 'playBtn');
+  check('a refused play is counted as refused', /asked 1, started 0, refused 1, last refused/.test(line(refused, 'play calls')),
+    line(refused, 'play calls'));
+
   t.report();
 })();
