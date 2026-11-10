@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.71.0-beta';
+  const VERSION = '1.72.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1178,6 +1178,7 @@
     analyser.fftSize = 1024;                       // 512 bins, plenty for 64 bands
     analyser.smoothingTimeConstant = 0.75;
     freq = new Uint8Array(analyser.frequencyBinCount);
+    if (ctx.addEventListener) ctx.addEventListener('statechange', onCtxState);
     return true;
   }
 
@@ -1188,8 +1189,70 @@
       srcNode.connect(analyser);
       analyser.connect(ctx.destination);           // ← the line whose absence is silence
     }
-    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    wakeCtx();
     return true;
+  }
+
+  // ── When the context stops on its own ─────────────────────────────────────────────────
+  // THE FILE REACHES THE SPEAKERS THROUGH THE CONTEXT (see the line marked above). So a context
+  // that is not 'running' is silence — while the <audio> element, which knows nothing about it,
+  // carries on: timer moving, pause bars showing, nothing to hear. A browser may stop a context
+  // without being asked: a call, a headset connecting, the app sent to the background. Until
+  // 1.72.0 nothing here noticed. The only resume() was on a Play press, and only for the state
+  // named 'suspended'; a context left 'interrupted' was never woken at all.
+  //
+  // Now: ask for it back at once, and give it CTX_GRACE_MS. If it is still down and the file
+  // is still playing into it, PAUSE and say so. A stopped track with a true sentence under it
+  // is better than a running clock over silence, and the Play press that follows is a tap —
+  // the one thing a browser will always accept as a reason to make sound again.
+  //
+  // WHAT THIS COSTS, since it is a deadline: an output that takes longer than the grace to come
+  // back pauses the music when waiting would have worked. A headset switch is a second or two,
+  // which is why the grace is not shorter. One timer, re-armed, never one per event.
+  //
+  // The plain element (links without CORS) and a file played before the graph exists do not go
+  // through the context, so neither is ever paused for its sake.
+  const CTX_GRACE_MS = 2500;
+  const INTERRUPTED_NOTE = 'Sound was interrupted. Press play to carry on.';
+  const CLOSED_NOTE = 'Sound stopped and cannot be restarted. Close the app and open it again.';
+  const ctxLog = { stopped: 0, cameBack: 0, gaveUp: 0 };
+  let ctxTimer = 0, ctxDown = false;
+
+  function wakeCtx() {
+    if (!ctx || ctx.state === 'running' || ctx.state === 'closed') return;
+    try { ctx.resume().catch(() => {}); } catch (e) { /* refused outright */ }
+  }
+  // Is sound being lost RIGHT NOW: the context down, and the file playing into it.
+  function silenced() {
+    return !!(ctx && ctx.state !== 'running' && srcNode && audio && audio === routedAudio && !audio.paused);
+  }
+  function giveUpOnCtx() {
+    ctxLog.gaveUp++;
+    audio.pause();
+    $('nowSub').textContent = ctx.state === 'closed' ? CLOSED_NOTE : INTERRUPTED_NOTE;
+    paintPlay();
+  }
+  // Called from everywhere the answer might have changed: the context changing state, a track
+  // starting or pausing, the app coming back to the front. It never EXTENDS a deadline already
+  // running — a context flapping between two stopped states, or a screen being woken over and
+  // over, would otherwise push the pause back for ever and the silence with it.
+  function watchCtx() {
+    if (!silenced()) { clearTimeout(ctxTimer); ctxTimer = 0; return; }
+    // A closed context cannot be woken and the element is bound to it for good: no grace.
+    if (ctx.state === 'closed') { giveUpOnCtx(); return; }
+    wakeCtx();
+    if (ctxTimer) return;
+    ctxTimer = setTimeout(() => {
+      ctxTimer = 0;
+      if (silenced()) giveUpOnCtx();    // otherwise it came back, or the track stopped or changed
+    }, CTX_GRACE_MS);
+  }
+  function onCtxState() {
+    const up = ctx.state === 'running';
+    if (up && ctxDown) ctxLog.cameBack++;
+    if (!up && !ctxDown) ctxLog.stopped++;
+    ctxDown = !up;
+    watchCtx();
   }
 
   // ── The microphone ──────────────────────────────────────────────────────
@@ -1249,6 +1312,8 @@
   // again with the microphone still open, which reads as the feature having quietly broken.
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && micLive) keepAwake(true);
+    // Coming back to the app is the likeliest moment to find the context left down.
+    if (document.visibilityState === 'visible') watchCtx();
   });
 
   function micPaint() {
@@ -1610,6 +1675,7 @@
     // life and only ever unloaded.
     audio.removeAttribute('src');
     audio.load();
+    clearTimeout(ctxTimer); ctxTimer = 0;     // that deadline was for the track just unloaded
   }
 
   // TWO ELEMENTS, AND THE SECOND EXISTS FOR ONE CASE: a link whose host refused the CORS request.
@@ -1629,7 +1695,7 @@
   const RAN_OUT_NOTE = 'Five tracks in a row stopped the moment they started, so it '
     + 'stopped here too. Press play to carry on anyway.';
   const END_NOTE = 'End of the queue.';
-  const STOPPED_NOTES = [TAP_NOTE, RAN_OUT_NOTE, END_NOTE];
+  const STOPPED_NOTES = [TAP_NOTE, RAN_OUT_NOTE, END_NOTE, INTERRUPTED_NOTE];
   const NO_VISUALS_NOTE = 'Playing, but no visuals — that site will not let this app read the sound.';
 
   // What the line under the title says while a track plays. A link is not "from this device".
@@ -1655,8 +1721,12 @@
     el.addEventListener('play', () => {
       if (el !== audio) return;
       playStartedAt = performance.now(); paintPlay(); startPump();
+      // NOT ONLY started(). A browser can resume the element by itself — after a call, say —
+      // and that reaches this listener and nothing else. Without this it plays into a context
+      // nobody asked back.
+      watchCtx();
     });
-    el.addEventListener('pause', () => { paintPlay(); });
+    el.addEventListener('pause', () => { paintPlay(); if (el === audio) watchCtx(); });
     el.addEventListener('ended', () => {
       if (el !== audio) return;
       const lasted = playStartedAt ? performance.now() - playStartedAt : 0;
@@ -1829,6 +1899,9 @@
     const row = queue[current];
     if (row && row.link && audio === plainAudio) row.noCors = true;
     if (STOPPED_NOTES.indexOf($('nowSub').textContent) >= 0) $('nowSub').textContent = sourceNote(row);
+    // ensureGraph() asked for the context above. If that is refused nothing changes state, so
+    // no event will ever say so: start the deadline here, or this track plays on in silence.
+    watchCtx();
     if (visualsFailed) {
       $('nowSub').textContent = 'Playing, but the visuals would not start on this phone. The '
         + 'sound is fine.';
@@ -1849,6 +1922,9 @@
     // failed came back looking exactly like a phone refusing to play. The two-argument form
     // handles the refusal ONLY, and leaves a real fault in started() to surface as an unhandled
     // rejection instead of vanishing. See the note in started().
+    // Asked for HERE as well as in started(): some browsers only honour resume() from inside
+    // the tap itself, and by the time the play() promise settles the tap is over.
+    if (audio.paused) wakeCtx();
     if (audio.paused) audio.play().then(started, () => {});
     else audio.pause();
   }
@@ -2778,6 +2854,10 @@
     // A diagnostic that reads as a fault when nothing is wrong costs more than a missing line.
     add('file audio graph', !!(ctx && analyser && srcNode)
       ? 'built' : (micLive ? 'not built (microphone in use, which has its own)' : 'not built'));
+    // Whether a context ever stops by itself on this phone is the question nobody could answer
+    // from a desk. These three counts are the answer.
+    add('audio context', ctx ? ctx.state + ', stopped ' + ctxLog.stopped + ', came back ' + ctxLog.cameBack
+      + ', gave up ' + ctxLog.gaveUp : 'none yet');
     add('screen awake', !!wakeLock);
     add('queue length', queue.length);          // a count, never the contents
     add('saved links', readLinks().length);     // likewise

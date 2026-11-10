@@ -233,6 +233,9 @@ function shown(e) { return !(e && e.attrs && 'hidden' in e.attrs); }
  *   opts.noCorsHosts    hostnames that refuse a CORS request: a play() with crossOrigin set fires
  *                       `error` and then rejects, as a real load does; without it, it plays
  *   opts.deadHosts      hostnames whose audio never loads at all, with or without CORS
+ *   opts.ctxState       the state an AudioContext is born in ('running' by default)
+ *   opts.ctxResume      what resume() does to a stopped context: 'ok' (default), 'refuse', 'hang'
+ *   opts.shortGrace     timers of a second or more fire after 20 ms
  *   opts.slowPlay       play() never settles by itself, like a track still loading; pause() or
  *                       load() then rejects it with an error named AbortError
  *   opts.blockPlainPlay refuse, once, the play() of a link made without a CORS request
@@ -524,7 +527,10 @@ function boot(opts) {
 
   const sandbox = {
     console: { log: noop, warn: noop, error: noop },
-    setTimeout, clearTimeout, setInterval, clearInterval,
+    // opts.shortGrace: a wait of a second or more is cut to 20 ms, so a case about a deadline
+    // does not sit through it. Only the case that asks; every other timer keeps its length.
+    setTimeout: o.shortGrace ? (fn, ms) => setTimeout(fn, ms >= 1000 ? 20 : ms) : setTimeout,
+    clearTimeout, setInterval, clearInterval,
     Promise, Math, JSON, Date, String, Number, Array, Object, Boolean, Error,
     Uint8Array, Set, Map, isFinite, parseInt, parseFloat,
     // The REAL URL class with the two blob helpers hung off it. It was a bare object once, and
@@ -576,9 +582,24 @@ function boot(opts) {
     MediaMetadata: function (m) { Object.assign(this, m); },
     matchMedia: () => ({ matches: o.reducedMotion === true, addEventListener: noop }),
     AudioContext: function () {
-      this.state = 'running';
+      const c = this;
+      this.state = o.ctxState || 'running';
       this.destination = {};
-      this.resume = () => Promise.resolve();
+      // A context can stop without being asked and may or may not come back when asked. Until
+      // 1.72.0 this fake was always 'running' and resume() always worked, so nothing here could
+      // see what the app did when neither was true. app.ctxSet(state) is the browser stopping
+      // it; app.ctxResume = 'ok' | 'refuse' | 'hang' is what asking for it back does.
+      this.handlers = {};
+      this.addEventListener = (t, fn) => { (c.handlers[t] = c.handlers[t] || []).push(fn); };
+      this.resumes = 0;
+      this.resume = () => {
+        c.resumes++;
+        if (c.state === 'running') return Promise.resolve();
+        if (ctxCtl.resume === 'refuse') return Promise.reject(new Error('InvalidStateError'));
+        if (ctxCtl.resume === 'hang') return new Promise(noop);
+        return Promise.resolve().then(() => { c.state = 'running'; fire(c, 'statechange'); });
+      };
+      ctxCtl.list.push(c);
       this.createAnalyser = () => ({
         fftSize: 1024, frequencyBinCount: 512, smoothingTimeConstant: 0.75,
         connect: noop, getByteFrequencyData: noop,
@@ -645,6 +666,7 @@ function boot(opts) {
     document: doc,
   };
   const resizes = { eq: 0, fx: 0 };
+  const ctxCtl = { list: [], resume: o.ctxResume || 'ok' };
   const cssVars = {};
   const eqConfigs = [], fxConfigs = [];
   let clock = 1000, rafId = 0, rafs = [];
@@ -674,6 +696,10 @@ function boot(opts) {
     /** Every audio element the app created, and every one it put through Web Audio. */
     medias,
     routed,
+    /** The app's audio context(s). ctxSet(state) is the browser changing it and saying so. */
+    ctxs: ctxCtl.list,
+    ctxSet(state) { const c = ctxCtl.list[0]; if (c) { c.state = state; fire(c, 'statechange'); } },
+    set ctxResume(v) { ctxCtl.resume = v; },
     fullscreen,
     yt,
     resizes,
