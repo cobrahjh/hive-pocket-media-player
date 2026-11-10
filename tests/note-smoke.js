@@ -10,6 +10,9 @@
  *   3. Play pressed after "five tracks stopped" -> the stop notice stayed up over the music
  *   4. Play pressed after "End of the queue."   -> the same
  *
+ * And since 1.73.0 one place where the line was merely SILENT: the press that stops the
+ * microphone, with music waiting, now says that the next press plays it.
+ *
  * The browser is tests/dom-stub.js. To run every case against another build of the app:
  *
  *   node tests/note-smoke.js
@@ -125,6 +128,55 @@ async function runOut(app) {
   await settle();
   await press(bad, 'playBtn');
   check('a renderer that cannot start is still reported', /visuals would not start/.test(note(bad)), note(bad));
+
+  // ── 6. the microphone was listening, and the press stopped it ───────────────────────────
+  // By design the button stops whatever its pause bars are showing for, and with the microphone
+  // open that is the microphone. With music waiting it read as a play button that did not play.
+  // The behaviour stays; the line under the title now says what the next press will do.
+  const ear = boot({ src: SRC });
+  pick(ear);
+  await settle();
+  fire(ear.els('micBtn'), 'click');
+  await rest();
+  check('the microphone is listening, with music queued', ear.pocket.micLive === true && playing(ear).length === 0);
+  await press(ear, 'playBtn');
+  check('the press stops the microphone, as before', ear.pocket.micLive === false && playing(ear).length === 0);
+  check('AND SAYS WHAT THE NEXT PRESS DOES', /Stopped listening\. Press play for your music/.test(note(ear)), note(ear));
+  await press(ear, 'playBtn');
+  check('the next press plays', playing(ear).length === 1);
+  check('and the hint is gone', note(ear) === 'From this device', note(ear));
+
+  // Nothing to play: the hint would be a promise the button cannot keep.
+  const empty = boot({ src: SRC });
+  fire(empty.els('micBtn'), 'click');
+  await rest();
+  await press(empty, 'playBtn');
+  check('with no music queued there is no such hint', empty.pocket.micLive === false
+    && !/Press play for your music/.test(note(empty)), note(empty));
+
+  // A track that was already chosen keeps its own line.
+  const mid = boot({ src: SRC });
+  pick(mid);
+  await settle();
+  await press(mid, 'playBtn');
+  fire(mid.els('micBtn'), 'click');          // listening pauses the file
+  await rest();
+  check('listening pauses the file', mid.pocket.micLive === true && playing(mid).length === 0);
+  await press(mid, 'playBtn');
+  check('a paused track keeps its own line when listening stops', mid.pocket.micLive === false
+    && note(mid) === 'From this device', note(mid));
+
+  // Names remembered but the folder itself forgotten: the rows are locked and nothing here can
+  // unlock them, so a press of play would do nothing. That is not music waiting.
+  const lost = boot({ src: SRC, store: new Map([['hive-pocket.foldernames', JSON.stringify(['one', 'two'])]]) });
+  await rest();
+  check('locked rows are shown with no folder behind them', lost.pocket.queue.length === 2
+    && lost.pocket.queue.every((x) => x.pending), JSON.stringify(lost.pocket.queue));
+  fire(lost.els('micBtn'), 'click');
+  await rest();
+  await press(lost, 'playBtn');
+  check('and rows nothing can unlock get no such hint either', lost.pocket.micLive === false
+    && !/Press play for your music/.test(note(lost)), note(lost));
 
   t.report();
 })();

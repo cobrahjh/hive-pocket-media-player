@@ -33,7 +33,7 @@
   // THE version. It is shown on screen and it names the service worker's cache, so a build
   // and the files it cached can never disagree about which build they are. Bump this ONE
   // line for a release; sw.js reads the same string.
-  const VERSION = '1.72.0-beta';
+  const VERSION = '1.73.0-beta';
 
   const $ = (id) => document.getElementById(id);
   // A control's tooltip and the text a screen reader announces are the same sentence, set in
@@ -1695,6 +1695,7 @@
   const RAN_OUT_NOTE = 'Five tracks in a row stopped the moment they started, so it '
     + 'stopped here too. Press play to carry on anyway.';
   const END_NOTE = 'End of the queue.';
+  const MIC_STOPPED_NOTE = 'Stopped listening. Press play for your music.';
   const STOPPED_NOTES = [TAP_NOTE, RAN_OUT_NOTE, END_NOTE, INTERRUPTED_NOTE];
   const NO_VISUALS_NOTE = 'Playing, but no visuals — that site will not let this app read the sound.';
 
@@ -1911,12 +1912,32 @@
 
   function toggle() {
     // Matches the icon exactly: whatever the pause bars are showing for is what stops.
-    if (micLive && !(audio && !audio.paused)) { micStop(); return; }
+    if (micLive && !(audio && !audio.paused)) {
+      micStop();
+      // The press did what the pause bars promised and stopped the microphone. With music
+      // waiting that reads as a play button that did not play, so say what the next press does.
+      // Only before anything has been chosen: a paused track keeps its own line.
+      // Locked rows with no folder handle left to unlock them are not music waiting.
+      if (current < 0 && queue.some((t) => !t.dead && (!t.pending || folderHandle))) {
+        $('nowSub').textContent = MIC_STOPPED_NOTE;
+      }
+      return;
+    }
     // A row that cannot play has nothing loaded. Say why again rather than do nothing — and
     // BEFORE the line below, which would otherwise start the first track instead when the dead
     // row was the first thing ever pressed and no audio element exists yet.
     if (current >= 0 && queue[current] && queue[current].dead) { play(current); return; }
-    if (!audio || current < 0) { if (queue.length) play(0); return; }
+    if (!audio || current < 0) {
+      // PLAY ON A COLD START IS "GIVE ME MY MUSIC BACK", the same as the Reconnect button, and
+      // now answers the same way: the track you were on, or the first one. It used to play
+      // row 0 of the remembered list by name - whatever the folder had listed first.
+      if (folderHandle && queue.some((t) => t.pending)) { reconnectFolder({ play: true }); return; }
+      // A folder that is already readable - allowed without asking, or brought back a moment
+      // ago by the same tap's first touch - resumes as well. Picked files start at the top.
+      const i = folderHandle ? resumeIndex() : -1;
+      if (queue.length) play(i >= 0 ? i : 0);
+      return;
+    }
     // .then(started, onRefused) and NOT .then(started).catch(onRefused). The two read the same
     // and are not: a trailing .catch also catches whatever `started` throws, so a renderer that
     // failed came back looking exactly like a phone refusing to play. The two-argument form
@@ -2232,7 +2253,10 @@
     if (!handles.length) { busy(false); folderNote('No playable audio in that folder.', true); return; }
     busy(true, 'Found ' + handles.length + ' tracks…');
     adoptHandles(handles);
-    writeNames(handles.map((fh) => fh.name.replace(/\.[^.]+$/, '')));
+    // THE ORDER THE QUEUE REALLY HAS, not the order the folder happened to list its files in.
+    // These names are the list shown on the next cold start; stored unsorted, that list was in
+    // a different order from the one it turned into, and its first row could be the last track.
+    writeNames(queue.filter((t) => t.handle).map((t) => t.name));
     busy(false);
     const capped = handles.length >= FOLDER_MAX_FILES;
     folderNote(handles.length + ' from ' + (h.name || 'your folder')
@@ -2245,10 +2269,12 @@
     failRun = 0;                    // a new folder is a fresh start, whatever the last one did
     readyNote(handles.length);
     queue.forEach((t) => { if (t.url && !t.link) { try { URL.revokeObjectURL(t.url); } catch (e) {} } });
+    // Sorted by the name AS SHOWN, without its extension, because that is what showPending()
+    // has to sort by - the extension is not stored. Sorted with it, "a b.mp3" came before
+    // "a.mp3" here and after it in the locked list, so the list still moved on unlocking.
     queue = handles
-      .slice()
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
       .map((fh) => ({ name: fh.name.replace(/\.[^.]+$/, ''), handle: fh }))
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }))
       .concat(readLinks().map(linkRow));
     current = -1;
     if (shuffleOn) buildOrder();
@@ -2470,7 +2496,10 @@
   function reconnectFolder(opts) {
     if (opts && opts.play === true) reconnectWantPlay = true;
     if (reconnectInFlight) return reconnectInFlight;
-    reconnectInFlight = reconnectFolderOnce().finally(() => { reconnectInFlight = null; });
+    // The wish to play dies with the attempt. An attempt that ends early (no gesture, no
+    // folder) used to leave it set, and the NEXT reconnect - a stray first touch, which must
+    // never start music - would have honoured it.
+    reconnectInFlight = reconnectFolderOnce().finally(() => { reconnectInFlight = null; reconnectWantPlay = false; });
     return reconnectInFlight;
   }
 
@@ -2520,7 +2549,11 @@
     const names = readNames();
     if (!names.length) return;
     if (queue.some((t) => t.file || t.handle)) return;   // a real folder is loaded; leave it alone
-    queue = names.map((n) => ({ name: n, pending: true }))
+    // Sorted here as well, because an install that remembered its folder before 1.73.0 has
+    // the names stored in the old order and will not store them again until it reconnects.
+    queue = names.slice()
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }))
+      .map((n) => ({ name: n, pending: true }))
       .concat(readLinks().map(linkRow));
     current = -1;
     if (shuffleOn) buildOrder();
